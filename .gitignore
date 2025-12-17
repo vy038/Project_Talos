@@ -1,0 +1,8 @@
+build/
+.vscode/
+*.bin
+*.elf
+*.map
+sdkconfig.old
+.DS_Store
+*.swp
