@@ -2,125 +2,125 @@
 
 
 
-\*\*Autonomous hexapod robot with 6-DOF vision-guided manipulator arm\*\*
+**Autonomous hexapod robot with 6-DOF vision-guided manipulator arm**
 
 
 
-\## 🎯 Overview
+## 🎯 Overview
 
 
 
 Autonomous scorpion-style hexapod robot featuring:
 
-\- 18-servo hexapod locomotion (tripod gait)
+- 18-servo hexapod locomotion (tripod gait)
 
-\- 7-servo 6-DOF manipulator arm with inverse kinematics
+- 7-servo 6-DOF manipulator arm with inverse kinematics
 
-\- Dual ESP32 architecture (WROOM + S3 CAM)
+- Dual ESP32 architecture (WROOM + S3 CAM)
 
-\- Computer vision with TensorFlow Lite
+- Computer vision with TensorFlow Lite
 
-\- Custom power management with current monitoring
-
-
-
-\## 🔧 Hardware
+- Custom power management with current monitoring
 
 
 
-\*\*Microcontrollers:\*\*
-
-\- ESP32 WROOM (motor control)
-
-\- ESP32-S3 N16R8 CAM (vision processing)
+## 🔧 Hardware
 
 
 
-\*\*Actuators:\*\*
+**Microcontrollers:**
 
-\- 18× SG90 micro servos (legs)
+- ESP32 WROOM (motor control)
 
-\- 6× MG90S metal gear servos (arm)
-
-\- 1× MG90S gripper
+- ESP32-S3 N16R8 CAM (vision processing)
 
 
 
-\*\*Sensors:\*\*
+**Actuators:**
 
-\- OV2640 camera (2MP)
+- 18× SG90 micro servos (legs)
 
-\- VL53L0X ToF distance sensor
+- 6× MG90S metal gear servos (arm)
 
-\- MPU6050 6-axis IMU
-
-\- ACS712 30A current sensor
+- 1× MG90S gripper
 
 
 
-\*\*Power:\*\*
+**Sensors:**
 
-\- 3S2P 18650 battery pack (11.1V, ~5000mAh)
+- OV2640 camera (2MP)
 
-\- 3S BMS (40A)
+- VL53L0X ToF distance sensor
 
-\- UBEC 5V 7A (servo power)
+- MPU6050 6-axis IMU
 
-\- 2× LM2596 buck converters (3.3V logic, 5V camera)
-
-
-
-\## 💻 Firmware
+- ACS712 30A current sensor
 
 
 
-\*\*Architecture:\*\*
+**Power:**
 
-\- Bare metal C with ESP-IDF
+- 3S2P 18650 battery pack (11.1V, ~5000mAh)
 
-\- FreeRTOS multi-task design
+- 3S BMS (40A)
 
-\- Hardware I2C for servo control (PCA9685)
+- UBEC 5V 7A (servo power)
 
-\- UART inter-MCU communication
-
-\- Inverse kinematics library for arm control
+- 2× LM2596 buck converters (3.3V logic, 5V camera)
 
 
 
-\*\*Tasks:\*\*
-
-\- Locomotion: 50Hz (tripod gait generation)
-
-\- Arm control: 20Hz (IK + servo commands)
-
-\- Vision: 10Hz (object detection)
-
-\- Power monitoring: 1Hz (current/voltage logging)
+## 💻 Firmware
 
 
 
-\## 🛠️ Development Setup
+**Architecture:**
+
+- Bare metal C with ESP-IDF
+
+- FreeRTOS multi-task design
+
+- Hardware I2C for servo control (PCA9685)
+
+- UART inter-MCU communication
+
+- Inverse kinematics library for arm control
 
 
 
-\*\*Prerequisites:\*\*
+**Tasks:**
 
-\- ESP-IDF v5.2+
+- Locomotion: 50Hz (tripod gait generation)
 
-\- Python 3.8+
+- Arm control: 20Hz (IK + servo commands)
 
-\- Git
+- Vision: 10Hz (object detection)
+
+- Power monitoring: 1Hz (current/voltage logging)
 
 
 
-\*\*Build:\*\*
+## 🛠️ Development Setup
+
+
+
+**Prerequisites:**
+
+- ESP-IDF v5.2+
+
+- Python 3.8+
+
+- Git
+
+
+
+**Build:**
 
 ```bash
 
-get\_idf
+get_idf
 
-cd Project\_Talos
+cd Project_Talos
 
 idf.py build
 
@@ -128,7 +128,7 @@ idf.py build
 
 
 
-\*\*Flash:\*\*
+**Flash:**
 
 ```bash
 
@@ -138,11 +138,11 @@ idf.py -p /dev/ttyUSB0 flash monitor
 
 
 
-\## 📁 Project Structure
+## 📁 Project Structure
 
 ```
 
-Project\_Talos/
+Project_Talos/
 
 ├── main/                   # Main application
 
@@ -156,9 +156,9 @@ Project\_Talos/
 
 ├── components/            # Hardware drivers
 
-│   ├── servo\_control/    # PCA9685 I2C driver
+│   ├── servo_control/    # PCA9685 I2C driver
 
-│   └── power\_monitor/    # ACS712 ADC driver
+│   └── power_monitor/    # ACS712 ADC driver
 
 ├── test/                  # Unit tests
 
@@ -170,21 +170,21 @@ Project\_Talos/
 
 
 
-\## 📊 Performance Targets
+## 📊 Performance Targets
 
 
 
-\- Locomotion update rate: 50Hz ± 0.3Hz
+- Locomotion update rate: 50Hz ± 0.3Hz
 
-\- Arm IK solve time: <5ms
+- Arm IK solve time: <5ms
 
-\- Vision detection: 10Hz
+- Vision detection: 10Hz
 
-\- Autonomous success rate: >70%
+- Autonomous success rate: >70%
 
 
 
-\## 📄 License
+## 📄 License
 
 
 
@@ -192,15 +192,15 @@ MIT License
 
 
 
-\## 📧 Contact
+## 📧 Contact
 
 
 
-Victor - \[GitHub](https://github.com/yourusername)
+Victor - [GitHub](https://github.com/yourusername)
 
 
 
-\*\*Status:\*\* In development (Dec 2024 - Apr 2025)
+**Status:** In development (Dec 2024 - Apr 2025)
 
 EOF
 
@@ -211,5 +211,6 @@ git add README.md
 git commit -m "docs: add comprehensive README"
 
 git push
+
 
 
