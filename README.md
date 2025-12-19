@@ -1,8 +1,4 @@
-cd ~/Documents/Project\_Talos
-
-cat > README.md << 'EOF'
-
-\# Project Talos
+# Project Talos
 
 
 
@@ -215,4 +211,5 @@ git add README.md
 git commit -m "docs: add comprehensive README"
 
 git push
+
 
