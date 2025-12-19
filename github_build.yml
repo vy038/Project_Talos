@@ -1,0 +1,66 @@
+name: Build Firmware
+
+# Trigger on pushes and pull requests to main and dev branches
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main, dev ]
+
+jobs:
+  build:
+    name: Build ESP32 Firmware
+    runs-on: ubuntu-latest
+    
+    # Use official ESP-IDF Docker container
+    container:
+      image: espressif/idf:v5.2
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+      
+      - name: Show ESP-IDF version
+        shell: bash
+        run: |
+          . $IDF_PATH/export.sh
+          idf.py --version
+      
+      - name: Build firmware
+        shell: bash
+        run: |
+          . $IDF_PATH/export.sh
+          idf.py build
+      
+      - name: Build size analysis
+        shell: bash
+        run: |
+          . $IDF_PATH/export.sh
+          idf.py size
+      
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-binaries-${{ github.sha }}
+          path: |
+            build/*.bin
+            build/*.elf
+            build/*.map
+          retention-days: 30
+      
+      - name: Build summary
+        shell: bash
+        run: |
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Build completed successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Firmware size:**" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          . $IDF_PATH/export.sh
+          idf.py size | grep "Total" >> $GITHUB_STEP_SUMMARY || echo "Size info not available" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Artifacts:** firmware-binaries-${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
