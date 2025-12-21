@@ -1,4 +1,4 @@
-#include "servo_control.h"
+#include "servo.h"
 #include "driver/i2c.h"
 #include <stdio.h>
 

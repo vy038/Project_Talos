@@ -1,5 +1,5 @@
-#ifndef SERVO_CONTROL_H
-#define SERVO_CONTROL_H
+#ifndef SERVO_H
+#define SERVO_H
 
 #include <stdint.h>
 
