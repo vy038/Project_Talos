@@ -1,18 +1,15 @@
 name: Build Firmware
 
-# Trigger on pushes and pull requests to main and dev branches
 on:
   push:
-    branches: [ main, dev ]
+    branches: [ dev ]
   pull_request:
-    branches: [ main, dev ]
+    branches: [ dev ]
 
 jobs:
-  build:
-    name: Build ESP32 Firmware
+  build-motor-controller:
+    name: Build ESP32 WROOM (Motor Control)
     runs-on: ubuntu-latest
-    
-    # Use official ESP-IDF Docker container
     container:
       image: espressif/idf:v5.2
     
@@ -22,45 +19,74 @@ jobs:
         with:
           submodules: 'recursive'
       
-      - name: Show ESP-IDF version
+      - name: Build motor controller firmware
         shell: bash
-        run: |
-          . $IDF_PATH/export.sh
-          idf.py --version
-      
-      - name: Build firmware
-        shell: bash
+        working-directory: ./esp
         run: |
           . $IDF_PATH/export.sh
           idf.py build
       
       - name: Build size analysis
         shell: bash
+        working-directory: ./esp
         run: |
           . $IDF_PATH/export.sh
           idf.py size
       
-      - name: Upload firmware artifacts
+      - name: Upload motor controller artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: firmware-binaries-${{ github.sha }}
+          name: esp32-wroom-firmware-${{ github.sha }}
           path: |
-            build/*.bin
-            build/*.elf
-            build/*.map
+            esp/build/*.bin
+            esp/build/*.elf
           retention-days: 30
+
+  build-vision-controller:
+    name: Build ESP32-S3 (Vision)
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:v5.2
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
       
-      - name: Build summary
+      - name: Build vision controller firmware
         shell: bash
+        working-directory: ./espcam
+        run: |
+          . $IDF_PATH/export.sh
+          idf.py build
+      
+      - name: Build size analysis
+        shell: bash
+        working-directory: ./espcam
+        run: |
+          . $IDF_PATH/export.sh
+          idf.py size
+      
+      - name: Upload vision controller artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: esp32-s3-firmware-${{ github.sha }}
+          path: |
+            espcam/build/*.bin
+            espcam/build/*.elf
+          retention-days: 30
+
+  build-summary:
+    name: Build Summary
+    needs: [build-motor-controller, build-vision-controller]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Check build status
         run: |
           echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "✅ Build completed successfully" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Firmware size:**" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          . $IDF_PATH/export.sh
-          idf.py size | grep "Total" >> $GITHUB_STEP_SUMMARY || echo "Size info not available" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Artifacts:** firmware-binaries-${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "ESP32 WROOM (Motor Control): ${{ needs.build-motor-controller.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "ESP32-S3 (Vision): ${{ needs.build-vision-controller.result }}" >> $GITHUB_STEP_SUMMARY
