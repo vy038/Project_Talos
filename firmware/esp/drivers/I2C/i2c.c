@@ -1,6 +1,7 @@
 #include "i2c.h"
 #include "driver/i2c.h"
 #include "esp_log.h"
+#include <stdbool.h>
 
 static const char *TAG = "I2C";
 
@@ -21,7 +22,7 @@ static bool i2c_initialized = false;
 esp_err_t xI2cMasterInit(void) {
     // check if initialized already
     if (i2c_initialized) {
-        ESP_LOGW(TAG, "I2C already initialized")
+        ESP_LOGW(TAG, "I2C already initialized");
         return ESP_OK;
     }
 
@@ -56,7 +57,7 @@ esp_err_t xI2cWriteByte(uint8_t dev_addr, uint8_t reg_addr, uint8_t data) {
     /* CREATING WRITE COMMAND BLOCK */
 
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-    ret = i2c_master_start(cmd);
+    i2c_master_start(cmd);
 
     // bitshift device address (7 bits) to the left and keep LSB as 0 for read bit
     i2c_master_write_byte(cmd, (dev_addr << 1) | I2C_MASTER_WRITE, true);
@@ -81,21 +82,46 @@ esp_err_t xI2cWriteByte(uint8_t dev_addr, uint8_t reg_addr, uint8_t data) {
         ESP_LOGE(TAG,  "Write to 0x%02X reg 0x%02X failed:%s",
                  dev_addr, reg_addr, esp_err_to_name(ret));
     }
+    i2c_cmd_link_delete(cmd);
     return ret;
 }
 
+esp_err_t xI2cWriteBytes(uint8_t dev_addr, uint8_t reg_addr, uint8_t data, size_t len) {
+    if (len == 0) return ESP_OK;
+
+    // standard write
+    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+
+    i2c_master_start(cmd);
+    i2c_master_write_byte(cmd, (dev_addr << 1) | I2C_MASTER_WRITE, true);
+    i2c_master_write_byte(cmd, reg_addr, true);
+
+    // write multiple bytes at once
+    i2c_master_write(cmd, data, len, true);
+    i2c_master_stop(cmd);
+
+    esp_err_t ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 1000 / portTICK_PERIOD_MS);
+    i2c_cmd_link_delete(cmd);
+
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Write%d bytes to 0x%02X reg 0x%02X failed:%s",
+                 len, dev_addr, reg_addr, esp_err_to_name(ret));
+    }
+    i2c_cmd_link_delete(cmd);
+    return ret;
+}
 
 esp_err_t xI2cReadByte(uint8_t dev_addr, uint8_t reg_addr, uint8_t *data) {
     /* CREATING READ COMMAND BLOCK */
 
     // set register pointer
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-    ret = i2c_master_start(cmd);
+    i2c_master_start(cmd);
     i2c_master_write_byte(cmd, (dev_addr << 1) | I2C_MASTER_WRITE, true);
     i2c_master_write_byte(cmd, reg_addr, true);
 
     // REPEATED START (to read data)
-    ret = i2c_master_start(cmd);
+    i2c_master_start(cmd);
     i2c_master_write_byte(cmd, (dev_addr << 1) | I2C_MASTER_READ, true);
     i2c_master_read_byte(cmd, data, I2C_MASTER_NACK);
 
@@ -113,19 +139,19 @@ esp_err_t xI2cReadByte(uint8_t dev_addr, uint8_t reg_addr, uint8_t *data) {
         ESP_LOGE(TAG,  "Read from 0x%02X reg 0x%02X failed:%s",
                  dev_addr, reg_addr, esp_err_to_name(ret));
     }
+    i2c_cmd_link_delete(cmd);
     return ret;
 }
-
 
 esp_err_t xI2cReadBytes(uint8_t dev_addr, uint8_t reg_addr, uint8_t *data, uint8_t len) {
     // standard read
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-    ret = i2c_master_start(cmd);
+    i2c_master_start(cmd);
     i2c_master_write_byte(cmd, (dev_addr << 1) | I2C_MASTER_WRITE, true);
     i2c_master_write_byte(cmd, reg_addr, true);
 
  
-    ret = i2c_master_start(cmd);
+    i2c_master_start(cmd);
     i2c_master_write_byte(cmd, (dev_addr << 1) | I2C_MASTER_READ, true);
 
     // if multiple bytes then write them all with ACK
@@ -146,5 +172,6 @@ esp_err_t xI2cReadBytes(uint8_t dev_addr, uint8_t reg_addr, uint8_t *data, uint8
         ESP_LOGE(TAG,  "Read %02X bytes from 0x%02X reg 0x%02X failed:%s",
                  len, dev_addr, reg_addr, esp_err_to_name(ret));
     }
+    i2c_cmd_link_delete(cmd);
     return ret;
 }

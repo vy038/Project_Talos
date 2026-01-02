@@ -4,23 +4,20 @@
 #include "esp_err.h"
 #include"esp_adc/adc_oneshot.h"
 
-adc_oneshot_unit_init_cfg_t config = {
-    .unit_id = ;
-    .clk_src = ;
-    .ulp_mode = ;
-}
+// Configuration (0-3.3V range)
+#define ADC_EXAMPLE_ATTEN   ADC_ATTEN_DB_11
 
 /**
  * @brief Initialize ADC unit with multiple channels
  *
  * Configures ADC unit 1 with 12-bit resolution and 12dB attenuation
- * (0-3.3V range) for all specified channels.
+ * (0-3.3V range) for specified channels.
  *
- * @param channels Array of ADC channel numbers to configure
- * @param num_channels Number of channels in the array
+ * @param channels ADC channels to configure
+ * @param num_channels # of channels to configure
  * @return esp_err_t ESP_OK on success, error code on failure
  */
-esp_err_t vAdcInit(const adc_channel_t channels[], int num_channels);
+esp_err_t xAdcInit(const adc_channel_t channels[], int num_channels);
 
 /**
  * @brief Read raw ADC value from a channel
@@ -29,7 +26,7 @@ esp_err_t vAdcInit(const adc_channel_t channels[], int num_channels);
  * @return int Raw ADC value (0-4095 for 12-bit resolution), 0 if not
  * initialized
  */
-int iAnalogPinReadRaw(adc_channel_t channel);
+int iAnalogReadRaw(adc_channel_t channel);
 
 /**
  * @brief Read voltage from an ADC channel
@@ -39,6 +36,17 @@ int iAnalogPinReadRaw(adc_channel_t channel);
  * @param channel ADC channel to read from
  * @return float Voltage reading in volts (0.0-3.3V)
  */
-float fAnalogPinReadVoltage(adc_channel_t channel);
+float fAnalogReadVoltage(adc_channel_t channel);
+
+/**
+ * @brief Read voltage from an ADC channel
+ *
+ * Converts the raw ADC reading to voltage assuming 3.3V reference.
+ *
+ * @param channel ADC channel to read from
+ * @param num_samples number of samples to average
+ * @return float of avg Voltage reading in volts (0.0-3.3V)
+ */
+float fAnalogReadVoltageAvg(adc_channel_t channel, int num_samples);
 
 #endif

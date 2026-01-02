@@ -4,10 +4,23 @@
 #include "esp_err.h"
 #include <stdint.h>
 
-// TODO: Initialize ACS712 current sensor
-esp_err_t power_monitor_init(void);
+/**
+ * @brief Initialize ACS712
+ *
+ * Sets up the ACS712 (Make sure ADC init() is called!)
+ * 
+ * @return esp_err_t ESP_OK on success, error code on failure
+ */
+esp_err_t xACS712Init(void);
 
-// TODO: Read current from ACS712 (returns Amps)
-float power_monitor_read_current(void);
+/**
+ * @brief Measure current through ACS712
+ *
+ * Measures the current being read, converting the ADC read value after averaging
+ * 
+ * @param current float to store current
+ * @return esp_err_t ESP_OK on success, error code on failure
+ */
+esp_err_t xACS712ReadCurrent(float *current);
 
 #endif
