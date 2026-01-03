@@ -1,6 +1,8 @@
 #ifndef POWER_MONITOR_H
 #define POWER_MONITOR_H
 
+#define ACS712_CHANNEL          ADC_CHANNEL_6   // GPIO 34
+
 #include "esp_err.h"
 #include <stdint.h>
 

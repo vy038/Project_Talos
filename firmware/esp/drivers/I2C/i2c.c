@@ -11,14 +11,6 @@ static bool i2c_initialized = false;
 #define I2C_MASTER_NUM       I2C_NUM_0
 #define I2C_MASTER_FREQ_HZ   100000
 
-// i2c master pins
-#define I2C_MASTER_SCL_IO GPIO_NUM_22
-#define I2C_MASTER_SDA_IO GPIO_NUM_21
-
-// read & write operations
-#define I2C_MASTER_WRITE 0x00
-#define I2C_MASTER_READ  0x01
-
 esp_err_t xI2cMasterInit(void) {
     // check if initialized already
     if (i2c_initialized) {

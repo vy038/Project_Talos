@@ -36,10 +36,6 @@
  **/
 #define MPU6050_REG_ACCEL_XOUT_H    0x3B
 
-// config values for gyro and accel
-#define ACCEL_SENSITIVITY_2G16384   .0f
-#define GYRO_SENSITIVITY_250131     .0f
-
 // IMU data structure
 typedef struct {
     float accel_x, accel_y, accel_z;    // m/s²

@@ -18,10 +18,6 @@
 #define MODE1_AI                0x20
 #define MODE1_RESTART           0x80
 
-// standard servo pulse range (sg90 standard)
-#define SERVO_MIN_PULSE_US      1000
-#define SERVO_MAX_PULSE_US      2000
-
 // servo command structure
 typedef struct {
     uint8_t channel;

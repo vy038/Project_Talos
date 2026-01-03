@@ -9,8 +9,11 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 
-static const char *TAG = "MPU6050";
+// config values for gyro and accel
+#define ACCEL_SENSITIVITY_2G16384   .0f
+#define GYRO_SENSITIVITY_250131     .0f
 
+static const char *TAG = "MPU6050";
 
 esp_err_t xMPU6050_init(void) {
     ESSP_LOGI(TAG, "Initializing MPU6050");

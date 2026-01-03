@@ -1,6 +1,9 @@
 #include"adc_helpers.h"
 #include"esp_log.h"
 
+// Configuration (0-3.3V range)
+#define ADC_EXAMPLE_ATTEN   ADC_ATTEN_DB_11
+
 static const char *TAG = "ADC";
 
 static adc_oneshit_unit_handle_t adc_handle = NULL;

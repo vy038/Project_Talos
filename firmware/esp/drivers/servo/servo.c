@@ -3,6 +3,10 @@
 #include "esp_log.h"
 #include <math.h>
 
+// standard servo pulse range (sg90 standard)
+#define SERVO_MIN_PULSE_US      1000
+#define SERVO_MAX_PULSE_US      2000
+
 esp_err_t xPCA9685Init(i2c_port_t port, uint8_t addr, uint16_t pwm_freq_hz) {
     // sleep mode
     esp_err_t ret = xI2cWriteByte(addr, PCA9685_REG_MODE1, MODE1_SLEEP);

@@ -4,14 +4,13 @@
 #include "esp_err.h"
 #include <stdint.h>
 
-// i2c config
+// i2c master pins
+#define I2C_MASTER_SCL_IO   GPIO_NUM_22
+#define I2C_MASTER_SDA_IO   GPIO_NUM_21
 
-#define I2C_MASTER_NUM I2C_NUM_0
-
-#define I2C_MASTER_SDA_IO   21
-#define I2C_MASTER_SCL_IO   22
-
-#define I2C_MASTER_FREQ_HZ100000
+// read & write operations
+#define I2C_MASTER_WRITE 0x00
+#define I2C_MASTER_READ  0x01
 
 
 /**

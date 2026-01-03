@@ -4,9 +4,6 @@
 #include "esp_err.h"
 #include"esp_adc/adc_oneshot.h"
 
-// Configuration (0-3.3V range)
-#define ADC_EXAMPLE_ATTEN   ADC_ATTEN_DB_11
-
 /**
  * @brief Initialize ADC unit with multiple channels
  *

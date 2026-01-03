@@ -6,7 +6,6 @@
 static const char *TAG = "POWER";
 
 // Hardware configuration
-#define ACS712_CHANNEL          ADC_CHANNEL_6   // GPIO 34
 #define DIVIDER_RATIO           0.667f          // 10k / 10k
 #define ACS712_ZERO_VOLTAGE     2.5f            // output at 0 Amps (assuming 5V)
 #define ACS712_SENSITIVITY      0.066f          // 66mV per Amp (30A version)
