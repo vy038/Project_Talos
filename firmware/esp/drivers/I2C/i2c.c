@@ -27,19 +27,10 @@ esp_err_t xI2cMasterInit(void) {
     };
 
     // apply config parameters + check
-    esp_err_t ret = i2c_param_config(I2C_MASTER_NUM, &conf);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to configure I2C parameters: %s",
-                 esp_err_to_name(ret));
-        return ret;
-    }
+    ESP_ERROR_CHECK(i2c_param_config(I2C_MASTER_NUM, &conf));
 
     // install driver + check
-    ret = i2c_driver_install(I2C_MASTER_NUM, conf.mode, 0, 0, 0);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to install I2C driver: %s", esp_err_to_name(ret));
-        return ret;
-    }
+    ESP_ERROR_CHECK(i2c_driver_install(I2C_MASTER_NUM, conf.mode, 0, 0, 0));
 
     ESP_LOGI(TAG, "I2C initialized");
     return ESP_OK;

@@ -15,12 +15,7 @@ esp_err_t xAdcInit(const adc_channel_t channels[], int num_channels) {
     };
 
     // unit config
-    esp_err_t ret = adc_oneshot_new_unit(&init_config, &adc_handle);
-
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to init ADC unit:%s", esp_err_to_name(ret));
-        return ret;
-    }
+    ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config, &adc_handle));
 
     // channel config
     adc_oneshot_chan_cfg_t chan_config = {
@@ -30,11 +25,7 @@ esp_err_t xAdcInit(const adc_channel_t channels[], int num_channels) {
 
     // initialize all channels
     for (int i = 0; i < num_channels; i++) {
-        ret = adc_oneshot_config_channel(adc_handle, channels[i], &chan_config);
-        if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to config channel:%s", channels[i]);
-            return ret;
-        }
+        ESP_ERROR_CHECK(dc_oneshot_config_channel(adc_handle, channels[i], &chan_config));
     }
 
     ESP_LOGI(TAG, "ADC initialized with %d channels", num_channels);
