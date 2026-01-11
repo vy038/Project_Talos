@@ -8,10 +8,6 @@
 #define I2C_MASTER_SCL_IO   GPIO_NUM_22
 #define I2C_MASTER_SDA_IO   GPIO_NUM_21
 
-// read & write operations
-#define I2C_MASTER_WRITE 0x00
-#define I2C_MASTER_READ  0x01
-
 
 /**
  * @brief Initialize I2C master interface
@@ -43,7 +39,7 @@ esp_err_t xI2cWriteByte(uint8_t dev_addr, uint8_t reg_addr, uint8_t data);
  * @param len       Total amount of bytes
  * @return esp_err_t ESP_OK on success, error code on failure
  */
-esp_err_t xI2cWriteBytes(uint8_t dev_addr, uint8_t reg_addr, uint8_t data, size_t len);
+esp_err_t xI2cWriteBytes(uint8_t dev_addr, uint8_t reg_addr, uint8_t *data, size_t len);
 
 
 /**

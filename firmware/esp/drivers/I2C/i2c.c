@@ -69,7 +69,7 @@ esp_err_t xI2cWriteByte(uint8_t dev_addr, uint8_t reg_addr, uint8_t data) {
     return ret;
 }
 
-esp_err_t xI2cWriteBytes(uint8_t dev_addr, uint8_t reg_addr, uint8_t data, size_t len) {
+esp_err_t xI2cWriteBytes(uint8_t dev_addr, uint8_t reg_addr, uint8_t *data, size_t len) {
     if (len == 0) return ESP_OK;
 
     // standard write
@@ -126,7 +126,7 @@ esp_err_t xI2cReadByte(uint8_t dev_addr, uint8_t reg_addr, uint8_t *data) {
     return ret;
 }
 
-esp_err_t xI2cReadBytes(uint8_t dev_addr, uint8_t reg_addr, uint8_t *data, uint8_t len) {
+esp_err_t xI2cReadBytes(uint8_t dev_addr, uint8_t reg_addr, uint8_t *data, size_t len) {
     // standard read
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
     i2c_master_start(cmd);

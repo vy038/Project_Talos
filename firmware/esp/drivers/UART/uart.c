@@ -29,7 +29,7 @@ esp_err_t xUARTInit(void) {
     ESP_ERROR_CHECK(uart_param_config(uart_num, &uart_config));
 
     // Set UART pins(UART_Num, TX: IO4, RX: IO5, RTS: IO18, CTS: IO19)
-    ESP_ERROR_CHECK(uart_set_pin(UART_PIN_TX, UART_PIN_RX, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+    ESP_ERROR_CHECK(uart_set_pin(UART_NUM_0, UART_PIN_TX, UART_PIN_RX, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
 
     return ESP_OK;
 }

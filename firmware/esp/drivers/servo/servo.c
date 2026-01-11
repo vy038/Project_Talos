@@ -1,11 +1,13 @@
 #include "servo.h"
-#include "../i2c/i2c.h" 
+#include "i2c.h" 
 #include "esp_log.h"
 #include <math.h>
 
 // standard servo pulse range (sg90 standard)
 #define SERVO_MIN_PULSE_US      1000
 #define SERVO_MAX_PULSE_US      2000
+
+static const char *TAG = "PCA9685";
 
 esp_err_t xPCA9685Init(i2c_port_t port, uint8_t addr, uint16_t pwm_freq_hz) {
     // sleep mode
@@ -98,7 +100,8 @@ esp_err_t xPCA9685SetPwmBurst(i2c_port_t port, uint8_t addr, uint8_t start_chann
         data[i*4 + 3] = (uint8_t)((pwm_off >> 8) & 0x0F);   // high 4 bits of pwm off
     }
 
-    esp_err_t ret = xI2cWriteBytes(addr, reg, data, total_bytes);
+    size_t num_bytes = num_channels * 4;
+    esp_err_t ret = xI2cWriteBytes(addr, reg, data, num_bytes);
     free(data);
 
     // write to all 4 channel registers

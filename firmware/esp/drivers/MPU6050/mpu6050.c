@@ -5,18 +5,19 @@
  */
 
 #include "mpu6050.h"
-#include "../i2c/i2c.h" 
+#include "i2c.h" 
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
+#include <math.h>
 
 // config values for gyro and accel
-#define ACCEL_SENSITIVITY_2G16384   .0f
-#define GYRO_SENSITIVITY_250131     .0f
+#define ACCEL_SENSITIVITY_2G        16384.0f
+#define GYRO_SENSITIVITY_250        131.0f
 
 static const char *TAG = "MPU6050";
 
 esp_err_t xMPU6050_init(void) {
-    ESSP_LOGI(TAG, "Initializing MPU6050");
+    ESP_LOGI(TAG, "Initializing MPU6050");
 
     // verify if device is connected
     uint8_t who_am_i;
@@ -36,8 +37,9 @@ esp_err_t xMPU6050_init(void) {
     vTaskDelay(pdMS_TO_TICKS(100));
 
     // config gyro and accel
-    ret = xI2cWriteByte(MPU6050_ADDR, MPU6050_REG_GYRO_CONFIG, GYRO_SENSITIVITY_250131);
-    ret = xI2cWriteByte(MPU6050_ADDR, MPU6050_REG_ACCEL_CONFIG, ACCEL_SENSITIVITY_2G16384);
+    ret = xI2cWriteByte(MPU6050_ADDR, MPU6050_REG_GYRO_CONFIG, 0x00);
+    ret = xI2cWriteByte(MPU6050_ADDR, MPU6050_REG_ACCEL_CONFIG, 0x00);
+    return ESP_OK;
 }
 
 
@@ -71,6 +73,7 @@ esp_err_t xMPU6050_read(mpu6050_data_t *data) {
     }
 
     return ret;
+    return ESP_OK;
 }
 
 
@@ -113,6 +116,7 @@ esp_err_t xMPU6050_calibrate(void) {
 
     ESP_LOGI(TAG, "Calibration complete!");
     return ESP_OK;
+    return ESP_OK;
 }
 
 
@@ -120,4 +124,5 @@ float fMPU6050_get_tilt(void) {
     mpu6050_data_t data;
     if (xMPU6050_read(&data) != ESP_OK) return -1.0f;
     return sqrtf(data.roll * data.roll + data.pitch * data.pitch);
+    return ESP_OK;
 }

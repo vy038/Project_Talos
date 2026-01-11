@@ -1,0 +1,23 @@
+# ESP-IDF build artifacts
+build/
+sdkconfig.old
+dependencies.lock
+
+# Managed components (downloaded via idf.py)
+managed_components/
+
+# IDE files
+.vscode/
+*.code-workspace
+
+# Python
+__pycache__/
+*.pyc
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Keep sdkconfig (debatable - some projects ignore it)
+# If you want different configs per machine, uncomment:
+# sdkconfig

@@ -6,7 +6,7 @@
 
 static const char *TAG = "ADC";
 
-static adc_oneshit_unit_handle_t adc_handle = NULL;
+static adc_oneshot_unit_handle_t adc_handle = NULL;
 
 esp_err_t xAdcInit(const adc_channel_t channels[], int num_channels) {
     // config to ADC unit 1
@@ -25,7 +25,7 @@ esp_err_t xAdcInit(const adc_channel_t channels[], int num_channels) {
 
     // initialize all channels
     for (int i = 0; i < num_channels; i++) {
-        ESP_ERROR_CHECK(dc_oneshot_config_channel(adc_handle, channels[i], &chan_config));
+        ESP_ERROR_CHECK(adc_oneshot_config_channel(adc_handle, channels[i], &chan_config));
     }
 
     ESP_LOGI(TAG, "ADC initialized with %d channels", num_channels);

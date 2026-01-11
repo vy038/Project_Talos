@@ -2,6 +2,7 @@
 #define UART_H
 
 #include "esp_err.h"
+#include "hal/gpio_types.h"
 #include <stdint.h>
 
 #define UART_PIN_TX       GPIO_NUM_1

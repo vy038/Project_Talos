@@ -1,5 +1,5 @@
 #include "power_monitor.h"
-#include "../adc/adc_helpers.h" 
+#include "adc_helpers.h" 
 #include "esp_log.h"
 #include <stdbool.h>
 
@@ -28,7 +28,7 @@ esp_err_t xACS712ReadCurrent(float *current) {
     // initialization check
     if (!initialized) {
         ESP_LOGE(TAG, "Power monitor not initialized");
-        return ESP_ERR_NOT_ALLOWED;
+        return ESP_ERR_INVALID_STATE;
     }
 
     /*
@@ -42,7 +42,7 @@ esp_err_t xACS712ReadCurrent(float *current) {
     float sensor_voltage = adc_voltage / DIVIDER_RATIO;
     
     // use ACS712 formula for current from voltage
-    current = (sensor_voltage - ACS712_ZERO_VOLTAGE) / ACS712_SENSITIVITY;
+    *current = (sensor_voltage - ACS712_ZERO_VOLTAGE) / ACS712_SENSITIVITY;
     
     return ESP_OK;
 }
