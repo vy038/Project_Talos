@@ -1,16 +1,21 @@
-// test camera
+// test_camera.c
 #include "camera.h"
+#include "esp_camera.h"
 
 void test_camera(void) {
     printf("\nCamera Test:\n");
     
-    camera_config_t cfg = {.width = 640, .height = 480};
-    camera_init(&cfg);
+    camera_init();
     
     for (int i = 0; i < 5; i++) {
-        camera_fb_t *fb = camera_capture_frame();
-        printf("Frame %d: %d bytes\n", i, fb ? fb->len : 0);
-        if (fb) camera_return_frame(fb);
+        camera_fb_t *fb = esp_camera_fb_get();
+        if (fb) {
+            printf("Frame %d: %d bytes, %dx%d\n", 
+                   i, fb->len, fb->width, fb->height);
+            esp_camera_fb_return(fb);
+        } else {
+            printf("Frame %d: FAILED\n", i);
+        }
         vTaskDelay(pdMS_TO_TICKS(500));
     }
 }
