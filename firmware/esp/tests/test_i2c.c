@@ -1,3 +1,4 @@
+// test i2c
 #include "i2c.h"
 
 void i2c_test(void) {
@@ -9,7 +10,7 @@ void i2c_test(void) {
         for (int j = 0; j < 16; j++) {
             uint8_t addr = i + j;
             if (addr < 0x08 || addr > 0x77) {
-                printf("   ");  // Reserved addresses
+                printf("   ");  // reserved addresses
                 continue;
             }
 
