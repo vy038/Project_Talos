@@ -21,14 +21,14 @@ jobs:
       
       - name: Build motor controller firmware
         shell: bash
-        working-directory: ./esp
+        working-directory: ./firmware/esp
         run: |
           . $IDF_PATH/export.sh
           idf.py build
       
       - name: Build size analysis
         shell: bash
-        working-directory: ./esp
+        working-directory: ./firmware/esp
         run: |
           . $IDF_PATH/export.sh
           idf.py size
@@ -38,8 +38,8 @@ jobs:
         with:
           name: esp32-wroom-firmware-${{ github.sha }}
           path: |
-            esp/build/*.bin
-            esp/build/*.elf
+            firmware/esp/build/*.bin
+            firmware/esp/build/*.elf
           retention-days: 30
 
   build-vision-controller:
@@ -56,14 +56,14 @@ jobs:
       
       - name: Build vision controller firmware
         shell: bash
-        working-directory: ./espcam
+        working-directory: ./firmware/espcam
         run: |
           . $IDF_PATH/export.sh
           idf.py build
       
       - name: Build size analysis
         shell: bash
-        working-directory: ./espcam
+        working-directory: ./firmware/espcam
         run: |
           . $IDF_PATH/export.sh
           idf.py size
@@ -73,8 +73,8 @@ jobs:
         with:
           name: esp32-s3-firmware-${{ github.sha }}
           path: |
-            espcam/build/*.bin
-            espcam/build/*.elf
+            firmware/espcam/build/*.bin
+            firmware/espcam/build/*.elf
           retention-days: 30
 
   build-summary:
