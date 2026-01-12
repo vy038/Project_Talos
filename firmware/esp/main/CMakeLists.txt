@@ -1,4 +1,5 @@
 idf_component_register(
     SRCS "main.c"
     INCLUDE_DIRS "."
+    REQUIRES I2C servo MPU6050 ADC power_monitor UART
 )

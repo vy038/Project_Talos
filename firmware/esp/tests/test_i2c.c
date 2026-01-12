@@ -1,6 +1,6 @@
 #include "i2c.h"
 
-void i2c_scan(void) {
+void i2c_test(void) {
     printf("\nI2C Bus Scan:\n");
     printf("     0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F\n");
 
