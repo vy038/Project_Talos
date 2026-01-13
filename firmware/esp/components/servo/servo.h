@@ -8,7 +8,7 @@
 #define PCA9685_BODY_ADDR       0x40
 #define PCA9685_ARM_ADDR        0x41
 
-// segister addresses
+// register addresses
 #define PCA9685_REG_MODE1       0x00
 #define PCA9685_REG_PRESCALE    0xFE
 #define PCA9685_REG_LED0_ON_L   0x06
