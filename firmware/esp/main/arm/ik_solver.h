@@ -1,63 +1,99 @@
+// ik_solver.h
 #ifndef IK_SOLVER_H
 #define IK_SOLVER_H
 
-#include "esp_err.h"
+#include <stdint.h>
 #include <stdbool.h>
+#include "esp_err.h"
 
-#define ARM_DOF 6
+// Link lengths in mm - measure from your CAD model
+#define ARM_BASE_ANGLE       0.0f  // Base mounting angle in degrees (0 = horizontal, 90 = vertical)
+#define ARM_LINK1_LENGTH     0.0f  // Shoulder to elbow
+#define ARM_LINK2_LENGTH     0.0f  // Elbow to wrist joint 1
+#define ARM_LINK3_LENGTH     0.0f  // Wrist joint 1 to wrist joint 2
+#define ARM_LINK4_LENGTH     0.0f  // Wrist joint 2 to gripper tip
+
+// Joint limits in degrees - get from servo datasheets and mechanical stops
+#define BASE_ROTATION_MIN       0.0f
+#define BASE_ROTATION_MAX       180.0f
+#define SHOULDER_MIN            0.0f
+#define SHOULDER_MAX            180.0f
+#define ELBOW_MIN               0.0f
+#define ELBOW_MAX               180.0f
+#define WRIST_PITCH_MIN         0.0f
+#define WRIST_PITCH_MAX         180.0f
+#define WRIST_ROLL_MIN          0.0f
+#define WRIST_ROLL_MAX          180.0f
+#define WRIST_YAW_MIN           0.0f
+#define WRIST_YAW_MAX           180.0f
+
+// Workspace limits
+#define MAX_REACH               (ARM_LINK1_LENGTH + ARM_LINK2_LENGTH + ARM_LINK3_LENGTH + ARM_LINK4_LENGTH)
+#define MIN_REACH               20.0f  // Minimum safe distance from base
+
+// ik_solver.h additions
+#define ARM_BASE_HEIGHT      0.0f  // Vertical distance from origin to shoulder pivot (mm)
+#define ARM_GRIPPER_ANGLE    0.0f  // Fixed downward angle of gripper relative to wrist (degrees, positive = down)
+
+typedef struct {
+    float x;        // Target position in mm (robot frame: x=forward)
+    float y;        // Target position in mm (robot frame: y=left)
+    float z;        // Target position in mm (robot frame: z=up)
+    float roll;     // End effector roll in degrees
+    float pitch;    // End effector pitch in degrees
+    float yaw;      // End effector yaw in degrees
+} ik_target_t;
+
+typedef struct {
+    float base_rotation;    // Base turret rotation
+    float shoulder;         // Shoulder pitch
+    float elbow;            // Elbow pitch
+    float wrist_pitch;      // Wrist pitch
+    float wrist_roll;       // Wrist roll
+    float wrist_yaw;        // Wrist yaw
+    bool valid;             // Whether solution is valid
+} ik_solution_t;
+
 
 /**
  * @brief Initialize IK solver
  *
- * Sets up initial parameters and workspace limits for 6-DOF arm
+ * Sets up initial parameters and workspace limits for 6-DOF arm. Should be called before any IK solving attempts.
  *
  * @return esp_err_t ESP_OK on success, error code on failure
  */
 esp_err_t xIkSolverInit(void);
 
 /**
- * @brief Calculate forward kinematics
- *
- * Computes end-effector position from joint angles
- *
- * @param joint_angles Array of 6 joint angles in radians
- * @param end_effector_pos Output array [x, y, z] in meters
- * @return esp_err_t ESP_OK on success, error code on failure
+ * @brief Solve inverse kinematics for target position
+ * 
+ * Solves for joint angles to achieve desired end effector pose. Returns ESP_ERR_INVALID_ARG if target is unreachable.
+ * 
+ * @param target Desired end effector pose
+ * @param solution Output joint angles
+ * @return ESP_OK if solution found, ESP_ERR_INVALID_ARG if unreachable
  */
-esp_err_t xForwardKinematics(float joint_angles[ARM_DOF], float end_effector_pos[3]);
+esp_err_t xIKSolve(const ik_target_t *target, ik_solution_t *solution);
 
 /**
- * @brief Solve inverse kinematics using Jacobian method
- *
- * Iteratively calculates joint angles to reach target position
- *
- * @param target_pos Target position [x, y, z] in meters
- * @param current_angles Current joint angles in radians
- * @param output_angles Output joint angles in radians
- * @return esp_err_t ESP_OK on success, error code on failure
+ * @brief Validate if target is within workspace
+ * 
+ * Checks if the given target position is reachable based on arm dimensions and joint limits. Used for pre-validation before attempting to solve IK.
+ * 
+ * @param target Position to check
+ * @return true if reachable
  */
-esp_err_t xJacobianInverseIk(float target_pos[3], float current_angles[ARM_DOF], float output_angles[ARM_DOF]);
+bool bIKIsReachable(const ik_target_t *target);
 
 /**
- * @brief Validate joint angles within servo limits
- *
- * Checks if all joint angles are within mechanical range
- *
- * @param joint_angles Array of 6 joint angles in radians
- * @return bool True if valid, false if any joint exceeds limits
+ * @brief Forward kinematics, position from angles
+ * 
+ * Find the position of the end effector given a set of joint angles. Useful for testing and visualization.
+ * 
+ * @param solution Joint angles
+ * @param position Output end effector position
+ * @return ESP_OK on success
  */
-bool bValidateJointLimits(float joint_angles[ARM_DOF]);
-
-/**
- * @brief Interpolate trajectory between two poses
- *
- * Linear interpolation for smooth motion between configurations
- *
- * @param start Starting joint configuration
- * @param end Target joint configuration
- * @param t Interpolation parameter (0.0 to 1.0)
- * @param output Interpolated joint configuration
- */
-void vInterpolateTrajectory(float start[ARM_DOF], float end[ARM_DOF], float t, float output[ARM_DOF]);
+esp_err_t xIKForward(const ik_solution_t *solution, ik_target_t *position);
 
 #endif

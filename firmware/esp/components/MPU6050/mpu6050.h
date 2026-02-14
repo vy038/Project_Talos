@@ -17,7 +17,7 @@
 // accel config
 #define MPU6050_REG_ACCEL_CONFIG    0x1C
 
-/** 
+/**
  * Start of multiple reading addresses
  * 0x3B: ACCEL_XOUT_H
  * 0x3C: ACCEL_XOUT_L
@@ -38,23 +38,16 @@
 
 // IMU data structure
 typedef struct {
-    float accel_x, accel_y, accel_z;    // m/s²
+    float accel_x, accel_y, accel_z;    // m/s^2
     float gyro_x, gyro_y, gyro_z;       // degrees/sec
-    float roll, pitch;                   // degrees (calculated)
+    float roll, pitch;                   // degrees (calculated from accel)
 } mpu6050_data_t;
-
-// calibration data structure
-static struct {
-    float accel_offset_x, accel_offset_y, accel_offset_z;
-    float gyro_offset_x, gyro_offset_y, gyro_offset_z;
-    bool calibrated;
-} calibration = {0};
 
 /**
  * @brief Initialize MPU
  *
  * Initializes the MPU for usage (Make sure I2C init() is called!)
- * 
+ *
  * @return esp_err_t ESP_OK on success, error code on failure
  */
 esp_err_t xMPU6050_init(void);
@@ -62,27 +55,30 @@ esp_err_t xMPU6050_init(void);
 /**
  * @brief Reads all sensor data (excluding temp)
  *
- * Reads all the sensor data on the MPu and writes all the info to a data struct
- * 
+ * Reads all the sensor data on the MPU and writes all the info to a data struct.
+ * Also computes roll and pitch from accelerometer.
+ *
  * @return esp_err_t ESP_OK on success, error code on failure
  */
 esp_err_t xMPU6050_read(mpu6050_data_t *data);
 
 /**
- * @brief Calibrates the MPu6050
+ * @brief Calibrates the MPU6050
  *
- * Calibrates MPU6050 to be relative to groudn its currently on
- * 
+ * Calibrates MPU6050 to be relative to ground its currently on.
+ * Robot MUST be level and still during calibration.
+ *
  * @return esp_err_t ESP_OK on success, error code on failure
  */
 esp_err_t xMPU6050_calibrate(void);
 
 /**
- * @brief Gets tilt angle magnitudes
+ * @brief Gets combined tilt magnitude
  *
- * Gets tilt angle magnitudes, needed for fine adjustment of arm and balancing
- * 
- * @return float value of tilt
+ * Returns sqrt(roll^2 + pitch^2) in degrees.
+ * Useful for balance checking and arm fine adjustment.
+ *
+ * @return float tilt magnitude in degrees, -1.0f on read failure
  */
 float fMPU6050_get_tilt(void);
 

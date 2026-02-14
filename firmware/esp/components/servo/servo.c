@@ -1,11 +1,8 @@
 #include "servo.h"
-#include "i2c.h" 
+#include "i2c.h"
 #include "esp_log.h"
 #include <math.h>
-
-// standard servo pulse range (sg90 standard)
-#define SERVO_MIN_PULSE_US      1000
-#define SERVO_MAX_PULSE_US      2000
+#include <stdlib.h>
 
 static const char *TAG = "PCA9685";
 
@@ -13,21 +10,21 @@ esp_err_t xPCA9685Init(i2c_port_t port, uint8_t addr, uint16_t pwm_freq_hz) {
     // sleep mode
     esp_err_t ret = xI2cWriteByte(addr, PCA9685_REG_MODE1, MODE1_SLEEP);
     if (ret != ESP_OK) return ret;
-    
+
     // config cycles
     uint8_t prescale = (uint8_t)(round(25000000.0 / (4096.0 * pwm_freq_hz)) - 1);
     ESP_LOGI(TAG, "Setting PWM to %d Hz (prescale = %d)", pwm_freq_hz, prescale);
-    
+
     ret = xI2cWriteByte(addr, PCA9685_REG_PRESCALE, prescale);
     if (ret != ESP_OK) return ret;
-    
+
     // auto increment for easier writing to registers
     ret = xI2cWriteByte(addr, PCA9685_REG_MODE1, MODE1_AI | MODE1_RESTART);
     if (ret != ESP_OK) return ret;
-    
-    // wait for boot
-    vTaskDelay(pdMS_TO_TICKS(1));
-    
+
+    // wait for oscillator to stabilize after restart
+    vTaskDelay(pdMS_TO_TICKS(5));
+
     ESP_LOGI(TAG, "PCA9685 at 0x%02X initialized successfully", addr);
     return ESP_OK;
 }
@@ -41,7 +38,7 @@ esp_err_t xPCA9685SetPwm(i2c_port_t port, uint8_t addr, uint8_t channel, uint16_
 
     // setting up pwm
     uint16_t pwm_on = 0;
-    // period = 20000µs (50Hz), 12 bit counter = 4095 ticks, pulse_us out of 4095 (~voltage)
+    // period = 20000us (50Hz), 12 bit counter = 4096 ticks, pulse_us out of 4096 (~voltage)
     uint16_t pwm_off = (pulse_us * 4096) / 20000;
 
     // find start of array of registers for channel (every channel has 4 registers, starting from 0x06)
@@ -54,18 +51,18 @@ esp_err_t xPCA9685SetPwm(i2c_port_t port, uint8_t addr, uint8_t channel, uint16_
         (uint8_t)(pwm_off),                 // low 8 bits of pwm off
         (uint8_t)((pwm_off >> 8) & 0x0F)    // high 4 bits of pwm off
     };
-    
+
     // write to all 4 channel registers
     return xI2cWriteBytes(addr, reg, data, 4);
 }
 
 esp_err_t xPCA9685SetAngle(i2c_port_t port, uint8_t addr, uint8_t channel, uint8_t angle) {
     if (angle > 180) angle = 180;
-    
+
     // generic mapping (replace with calibration for min/max later)
     // find space between min and max pulses, and map each angle to a pulse between
     uint16_t pulse_us = SERVO_MIN_PULSE_US + (angle * (SERVO_MAX_PULSE_US - SERVO_MIN_PULSE_US) / 180);
-    
+
     return xPCA9685SetPwm(port, addr, channel, pulse_us);
 }
 
@@ -91,7 +88,7 @@ esp_err_t xPCA9685SetPwmBurst(i2c_port_t port, uint8_t addr, uint8_t start_chann
 
     // create data packets to write
     for (int i = 0; i < num_channels; i++) {
-        // period = 20000µs (50Hz), 12 bit counter = 4095 ticks, pulse_us out of 4095 (~voltage)
+        // period = 20000us (50Hz), 12 bit counter = 4096 ticks, pulse_us out of 4096 (~voltage)
         uint16_t pwm_off = (pulse_us[i] * 4096) / 20000;
 
         data[i*4 + 0] = (uint8_t)(pwm_on);                  // low 8 bits of pwm on (0)
@@ -104,7 +101,6 @@ esp_err_t xPCA9685SetPwmBurst(i2c_port_t port, uint8_t addr, uint8_t start_chann
     esp_err_t ret = xI2cWriteBytes(addr, reg, data, num_bytes);
     free(data);
 
-    // write to all 4 channel registers
     return ret;
 }
 

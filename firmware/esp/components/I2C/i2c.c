@@ -7,10 +7,6 @@ static const char *TAG = "I2C";
 
 static bool i2c_initialized = false;
 
-// i2c settings
-#define I2C_MASTER_NUM       I2C_NUM_0
-#define I2C_MASTER_FREQ_HZ   100000
-
 esp_err_t xI2cMasterInit(void) {
     // check if initialized already
     if (i2c_initialized) {
@@ -23,6 +19,8 @@ esp_err_t xI2cMasterInit(void) {
         .mode = I2C_MODE_MASTER,
         .sda_io_num = I2C_MASTER_SDA_IO, // 21
         .scl_io_num = I2C_MASTER_SCL_IO, // 22
+        .sda_pullup_en = GPIO_PULLUP_ENABLE,
+        .scl_pullup_en = GPIO_PULLUP_ENABLE,
         .master.clk_speed = I2C_MASTER_FREQ_HZ,
     };
 
@@ -32,7 +30,9 @@ esp_err_t xI2cMasterInit(void) {
     // install driver + check
     ESP_ERROR_CHECK(i2c_driver_install(I2C_MASTER_NUM, conf.mode, 0, 0, 0));
 
-    ESP_LOGI(TAG, "I2C initialized");
+    i2c_initialized = true;
+    ESP_LOGI(TAG, "I2C initialized on port %d (SDA:%d SCL:%d @ %dHz)",
+             I2C_MASTER_NUM, I2C_MASTER_SDA_IO, I2C_MASTER_SCL_IO, I2C_MASTER_FREQ_HZ);
     return ESP_OK;
 }
 
@@ -62,10 +62,9 @@ esp_err_t xI2cWriteByte(uint8_t dev_addr, uint8_t reg_addr, uint8_t data) {
     i2c_cmd_link_delete(cmd);
 
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG,  "Write to 0x%02X reg 0x%02X failed:%s",
+        ESP_LOGE(TAG, "Write to 0x%02X reg 0x%02X failed: %s",
                  dev_addr, reg_addr, esp_err_to_name(ret));
     }
-    i2c_cmd_link_delete(cmd);
     return ret;
 }
 
@@ -87,10 +86,9 @@ esp_err_t xI2cWriteBytes(uint8_t dev_addr, uint8_t reg_addr, uint8_t *data, size
     i2c_cmd_link_delete(cmd);
 
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Write%d bytes to 0x%02X reg 0x%02X failed:%s",
-                 len, dev_addr, reg_addr, esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Write %d bytes to 0x%02X reg 0x%02X failed: %s",
+                 (int)len, dev_addr, reg_addr, esp_err_to_name(ret));
     }
-    i2c_cmd_link_delete(cmd);
     return ret;
 }
 
@@ -110,7 +108,7 @@ esp_err_t xI2cReadByte(uint8_t dev_addr, uint8_t reg_addr, uint8_t *data) {
 
     i2c_master_stop(cmd);
 
-    /* ENDED WRITE COMMAND BLOCK */
+    /* ENDED READ COMMAND BLOCK */
 
     // excecute the finalized command
     esp_err_t ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 1000 / portTICK_PERIOD_MS);
@@ -119,42 +117,41 @@ esp_err_t xI2cReadByte(uint8_t dev_addr, uint8_t reg_addr, uint8_t *data) {
     i2c_cmd_link_delete(cmd);
 
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG,  "Read from 0x%02X reg 0x%02X failed:%s",
+        ESP_LOGE(TAG, "Read from 0x%02X reg 0x%02X failed: %s",
                  dev_addr, reg_addr, esp_err_to_name(ret));
     }
-    i2c_cmd_link_delete(cmd);
     return ret;
 }
 
 esp_err_t xI2cReadBytes(uint8_t dev_addr, uint8_t reg_addr, uint8_t *data, size_t len) {
+    if (len == 0) return ESP_OK;
+
     // standard read
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
     i2c_master_start(cmd);
     i2c_master_write_byte(cmd, (dev_addr << 1) | I2C_MASTER_WRITE, true);
     i2c_master_write_byte(cmd, reg_addr, true);
 
- 
+    // REPEATED START (to read data)
     i2c_master_start(cmd);
     i2c_master_write_byte(cmd, (dev_addr << 1) | I2C_MASTER_READ, true);
 
-    // if multiple bytes then write them all with ACK
-    if (len > 1) { 
+    // if multiple bytes then read them all with ACK
+    if (len > 1) {
         i2c_master_read(cmd, data, len - 1, I2C_MASTER_ACK);
     }
-    // write last with NACK
+    // read last byte with NACK (signals end of read to slave)
     i2c_master_read_byte(cmd, data + len - 1, I2C_MASTER_NACK);
 
     i2c_master_stop(cmd);
-
 
     esp_err_t ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, 1000 / portTICK_PERIOD_MS);
 
     i2c_cmd_link_delete(cmd);
 
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG,  "Read %02X bytes from 0x%02X reg 0x%02X failed:%s",
-                 len, dev_addr, reg_addr, esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Read %d bytes from 0x%02X reg 0x%02X failed: %s",
+                 (int)len, dev_addr, reg_addr, esp_err_to_name(ret));
     }
-    i2c_cmd_link_delete(cmd);
     return ret;
 }

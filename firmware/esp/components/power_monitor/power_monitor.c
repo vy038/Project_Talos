@@ -1,5 +1,5 @@
 #include "power_monitor.h"
-#include "adc_helpers.h" 
+#include "adc_helpers.h"
 #include "esp_log.h"
 #include <stdbool.h>
 
@@ -31,18 +31,22 @@ esp_err_t xACS712ReadCurrent(float *current) {
         return ESP_ERR_INVALID_STATE;
     }
 
+    if (current == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
     /*
        range: 0.26V - 2.24V (after voltage divider) * 2 = 0.52V - 4.48V (actual ACS712 output)
     */
 
     // read avg ADC voltage directly
     float adc_voltage = fAnalogReadVoltageAvg(ACS712_CHANNEL, NUM_SAMPLES);
-    
+
     // convert voltage divider to actual voltage
     float sensor_voltage = adc_voltage / DIVIDER_RATIO;
-    
+
     // use ACS712 formula for current from voltage
     *current = (sensor_voltage - ACS712_ZERO_VOLTAGE) / ACS712_SENSITIVITY;
-    
+
     return ESP_OK;
 }
