@@ -5,7 +5,7 @@
 #include "driver/i2c.h"
 #include <stdint.h>
 
-// i2c master configuration (change these to match your wiring)
+// i2c master configuration
 #define I2C_MASTER_SCL_IO   GPIO_NUM_22
 #define I2C_MASTER_SDA_IO   GPIO_NUM_21
 #define I2C_MASTER_NUM      I2C_NUM_0

@@ -8,7 +8,6 @@ static adc_oneshot_unit_handle_t adc_handle = NULL;
 static bool adc_initialized = false;
 
 esp_err_t xAdcInit(const adc_channel_t channels[], int num_channels) {
-    // prevent double init (adc_oneshot_new_unit would fail on second call)
     if (adc_initialized) {
         ESP_LOGW(TAG, "ADC already initialized, configuring new channels only");
     } else {
