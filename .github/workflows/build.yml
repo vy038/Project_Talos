@@ -88,7 +88,7 @@ jobs:
             ~/.ccache
             firmware/esp/build/bootloader
             firmware/esp/build/esp-idf
-          key: esp-wroom-${{ hashFiles('firmware/esp/**/*.c', 'firmware/esp/**/*.h') }}
+          key: esp-wroom-${{ hashFiles('firmware/esp/main/**', 'firmware/esp/components/**', 'firmware/esp/CMakeLists.txt') }}
           restore-keys: esp-wroom-
 
       - name: Set target and build
@@ -151,7 +151,7 @@ jobs:
             ~/.ccache
             firmware/espcam/build/bootloader
             firmware/espcam/build/esp-idf
-          key: esp-s3-${{ hashFiles('firmware/espcam/**/*.c', 'firmware/espcam/**/*.h') }}
+          key: esp-s3-${{ hashFiles('firmware/espcam/main/**', 'firmware/espcam/components/**', 'firmware/espcam/CMakeLists.txt') }}
           restore-keys: esp-s3-
 
       - name: Set target and build
