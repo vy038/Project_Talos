@@ -1,0 +1,215 @@
+name: CI
+
+on:
+  push:
+    branches: [ dev ]
+    paths:
+      - 'firmware/**'
+      - '.github/workflows/build.yml'
+  pull_request:
+    branches: [ dev ]
+    paths:
+      - 'firmware/**'
+      - '.github/workflows/build.yml'
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  # ── Host unit tests (no hardware needed) ──────────────────────────
+  host-tests:
+    name: Host Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and run host tests
+        working-directory: firmware/tests/host
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build
+          cd build && ctest --output-on-failure
+
+  # ── Static analysis ───────────────────────────────────────────────
+  static-analysis:
+    name: Static Analysis (cppcheck)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cppcheck
+        run: sudo apt-get update && sudo apt-get install -y cppcheck
+
+      - name: Run cppcheck on motor controller
+        run: |
+          cppcheck --enable=warning,performance,portability \
+            --error-exitcode=1 \
+            --suppress=missingIncludeSystem \
+            --inline-suppr \
+            -I firmware/esp/components \
+            -I firmware/esp/main \
+            firmware/esp/main/ \
+            firmware/esp/components/
+
+      - name: Run cppcheck on vision controller
+        run: |
+          cppcheck --enable=warning,performance,portability \
+            --error-exitcode=1 \
+            --suppress=missingIncludeSystem \
+            --inline-suppr \
+            -I firmware/espcam/components \
+            -I firmware/espcam/main \
+            firmware/espcam/main/ \
+            firmware/espcam/components/
+
+  # ── ESP32 WROOM build (motor controller) ──────────────────────────
+  build-motor-controller:
+    name: Build ESP32 WROOM (Motor Control)
+    runs-on: ubuntu-latest
+    needs: [host-tests]
+    container:
+      image: espressif/idf:v5.2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Enable ccache
+        run: |
+          echo "CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
+          echo "IDF_CCACHE_ENABLE=1" >> $GITHUB_ENV
+
+      - name: Restore build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.ccache
+            firmware/esp/build/bootloader
+            firmware/esp/build/esp-idf
+          key: esp-wroom-${{ hashFiles('firmware/esp/**/*.c', 'firmware/esp/**/*.h', 'firmware/esp/sdkconfig') }}
+          restore-keys: esp-wroom-
+
+      - name: Build firmware
+        shell: bash
+        working-directory: firmware/esp
+        run: |
+          . $IDF_PATH/export.sh
+          idf.py build
+
+      - name: Size analysis
+        shell: bash
+        working-directory: firmware/esp
+        run: |
+          . $IDF_PATH/export.sh
+          idf.py size 2>&1 | tee size-report.txt
+
+      - name: Size report to summary
+        shell: bash
+        working-directory: firmware/esp
+        run: |
+          echo "## ESP32 WROOM Size Report" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat size-report.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: esp32-wroom-firmware-${{ github.sha }}
+          path: |
+            firmware/esp/build/*.bin
+            firmware/esp/build/*.elf
+            firmware/esp/build/bootloader/bootloader.bin
+            firmware/esp/build/partition_table/partition-table.bin
+            firmware/esp/size-report.txt
+          retention-days: 30
+
+  # ── ESP32-S3 build (vision controller) ────────────────────────────
+  build-vision-controller:
+    name: Build ESP32-S3 (Vision)
+    runs-on: ubuntu-latest
+    needs: [host-tests]
+    container:
+      image: espressif/idf:v5.2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Enable ccache
+        run: |
+          echo "CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
+          echo "IDF_CCACHE_ENABLE=1" >> $GITHUB_ENV
+
+      - name: Restore build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.ccache
+            firmware/espcam/build/bootloader
+            firmware/espcam/build/esp-idf
+          key: esp-s3-${{ hashFiles('firmware/espcam/**/*.c', 'firmware/espcam/**/*.h', 'firmware/espcam/sdkconfig') }}
+          restore-keys: esp-s3-
+
+      - name: Build firmware
+        shell: bash
+        working-directory: firmware/espcam
+        run: |
+          . $IDF_PATH/export.sh
+          idf.py build
+
+      - name: Size analysis
+        shell: bash
+        working-directory: firmware/espcam
+        run: |
+          . $IDF_PATH/export.sh
+          idf.py size 2>&1 | tee size-report.txt
+
+      - name: Size report to summary
+        shell: bash
+        working-directory: firmware/espcam
+        run: |
+          echo "## ESP32-S3 Size Report" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat size-report.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: esp32-s3-firmware-${{ github.sha }}
+          path: |
+            firmware/espcam/build/*.bin
+            firmware/espcam/build/*.elf
+            firmware/espcam/build/bootloader/bootloader.bin
+            firmware/espcam/build/partition_table/partition-table.bin
+            firmware/espcam/size-report.txt
+          retention-days: 30
+
+  # ── Summary ───────────────────────────────────────────────────────
+  build-summary:
+    name: Build Summary
+    needs: [host-tests, static-analysis, build-motor-controller, build-vision-controller]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Build status
+        run: |
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Target | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Host Unit Tests | ${{ needs.host-tests.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Static Analysis | ${{ needs.static-analysis.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ESP32 WROOM (Motor) | ${{ needs.build-motor-controller.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ESP32-S3 (Vision) | ${{ needs.build-vision-controller.result }} |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Fail if any job failed
+        if: >-
+          needs.host-tests.result == 'failure' ||
+          needs.static-analysis.result == 'failure' ||
+          needs.build-motor-controller.result == 'failure' ||
+          needs.build-vision-controller.result == 'failure'
+        run: exit 1
