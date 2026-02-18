@@ -88,14 +88,15 @@ jobs:
             ~/.ccache
             firmware/esp/build/bootloader
             firmware/esp/build/esp-idf
-          key: esp-wroom-${{ hashFiles('firmware/esp/**/*.c', 'firmware/esp/**/*.h', 'firmware/esp/sdkconfig') }}
+          key: esp-wroom-${{ hashFiles('firmware/esp/**/*.c', 'firmware/esp/**/*.h') }}
           restore-keys: esp-wroom-
 
-      - name: Build firmware
+      - name: Set target and build
         shell: bash
         working-directory: firmware/esp
         run: |
           . $IDF_PATH/export.sh
+          idf.py set-target esp32
           idf.py build
 
       - name: Size analysis
@@ -150,14 +151,15 @@ jobs:
             ~/.ccache
             firmware/espcam/build/bootloader
             firmware/espcam/build/esp-idf
-          key: esp-s3-${{ hashFiles('firmware/espcam/**/*.c', 'firmware/espcam/**/*.h', 'firmware/espcam/sdkconfig') }}
+          key: esp-s3-${{ hashFiles('firmware/espcam/**/*.c', 'firmware/espcam/**/*.h') }}
           restore-keys: esp-s3-
 
-      - name: Build firmware
+      - name: Set target and build
         shell: bash
         working-directory: firmware/espcam
         run: |
           . $IDF_PATH/export.sh
+          idf.py set-target esp32s3
           idf.py build
 
       - name: Size analysis
