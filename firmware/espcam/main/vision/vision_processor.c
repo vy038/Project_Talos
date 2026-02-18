@@ -2,6 +2,7 @@
 #include "camera.h"
 #include "esp_camera.h"
 #include "vl53l0x.h"
+#include "i2c.h"
 #include "esp_log.h"
 #include <string.h>
 #include <math.h>
