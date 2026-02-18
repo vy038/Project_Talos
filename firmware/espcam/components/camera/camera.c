@@ -21,7 +21,7 @@ static const char *TAG = "camera";
 #define CAM_PIN_HREF    GPIO_NUM_23
 #define CAM_PIN_PCLK    GPIO_NUM_22
 
-esp_err_t camera_init(void) {
+esp_err_t xCameraInit(void) {
     camera_config_t config = {
         .pin_pwdn = CAM_PIN_PWDN,
         .pin_reset = CAM_PIN_RESET,

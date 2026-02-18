@@ -1,244 +1,234 @@
-// gait_generator.c
 #include "gait_generator.h"
+#include "balance_control.h"
+#include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include <math.h>
 #include <string.h>
-#include "esp_log.h"
+
+#define NEUTRAL_STEP_DEG  4.0f
 
 static const char *TAG = "GAIT";
 
-#define DEG_TO_RAD(deg) ((deg) * M_PI / 180.0f)
-#define RAD_TO_DEG(rad) ((rad) * 180.0f / M_PI)
 
-// Leg attachment positions [x, y] in mm
-static const float leg_attachments[NUM_LEGS][2] = {
-    {LEG_FL_ATTACH_X, LEG_FL_ATTACH_Y},  // Front left
-    {LEG_ML_ATTACH_X, LEG_ML_ATTACH_Y},  // Middle left
-    {LEG_RL_ATTACH_X, LEG_RL_ATTACH_Y},  // Rear left
-    {LEG_FR_ATTACH_X, LEG_FR_ATTACH_Y},  // Front right
-    {LEG_MR_ATTACH_X, LEG_MR_ATTACH_Y},  // Middle right
-    {LEG_RR_ATTACH_X, LEG_RR_ATTACH_Y}   // Rear right
+/* GAIT DIAGRAM (top view)
+*
+*       [3]                    [12]
+*          \                  /
+*           [0]----FRONT---[15]
+*            |              |
+*      [4]--[1]----BODY----[14]--[11]
+*            |              |
+*           [2]----REAR----[13]
+*          /                  \ 
+*       [5]                    [10]
+*/
+
+static const uint8_t leg_channels[NUM_LEGS][DOF_PER_LEG] = {
+    {15, 12},    // Leg 0: Front-Right  hip=ch15, knee=TODO
+    {14, 11},    // Leg 1: Mid-Right    hip=ch14, knee=TODO
+    {13, 10},    // Leg 2: Rear-Right   hip=ch13, knee=TODO
+    {2,  5},    // Leg 3: Rear-Left    hip=ch2,  knee=TODO
+    {1,  4},    // Leg 4: Mid-Left     hip=ch1,  knee=TODO
+    {0,  3},    // Leg 5: Front-Left   hip=ch0,  knee=TODO
 };
 
-// Phase offsets for each gait pattern
-// Phase 0.0 = start of stance, 0.5 = start of swing for that leg
-static const float gait_phase_offsets[4][NUM_LEGS] = {
-    // Tripod gait: two groups of 3 legs
-    {0.0f, 0.5f, 0.0f, 0.5f, 0.0f, 0.5f},  // FL,RL,MR together; ML,FR,RR together
-    
-    // Wave gait: sequential, one leg at a time
-    {0.0f, 0.167f, 0.333f, 0.5f, 0.667f, 0.833f},
-    
-    // Ripple gait: alternating groups
-    {0.0f, 0.25f, 0.5f, 0.125f, 0.375f, 0.625f},
-    
-    // Stationary: all legs in stance
-    {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f}
+// gait configs
+static const int8_t hip_direction[NUM_LEGS]  = { 1,  1,  1, -1, -1, -1};
+static const int8_t knee_direction[NUM_LEGS] = { 1,  1,  1, -1, -1, -1};
+
+static const float tripod_offsets[NUM_LEGS] = {
+    0.0f, 0.5f, 0.0f, 0.5f, 0.0f, 0.5f,
 };
 
-// Duty cycle: fraction of gait cycle with leg on ground
-static const float gait_duty_cycles[] = {
-    0.5f,  // Tripod: 50% stance
-    0.833f,  // Wave: 83.3% stance
-    0.667f,  // Ripple: 66.7% stance
-    1.0f   // Stationary: 100% stance
+static const float wave_offsets[NUM_LEGS] = {
+    0.000f, 0.167f, 0.333f, 0.500f, 0.667f, 0.833f,
+};
+
+static const float ripple_offsets[NUM_LEGS] = {
+    0.000f, 0.333f, 0.667f, 0.500f, 0.833f, 0.167f,
+};
+
+// walking configs
+static const float gait_duty_cycle[] = {
+    [GAIT_TRIPOD] = 0.5f,
+    [GAIT_WAVE]   = 0.167f,
+    [GAIT_RIPPLE] = 0.333f,
 };
 
 static gait_type_t current_gait = GAIT_TRIPOD;
-static float global_phase = 0.0f;
+static move_command_t current_command = MOVE_STOP;
+static float current_speed = 0.5f;
+static float master_phase = 0.0f;
+static leg_angles_t current_angles = {0};
+static const float *active_offsets = tripod_offsets;
 
-esp_err_t xGaitGeneratorInit(void) {
-    global_phase = 0.0f;
-    current_gait = GAIT_TRIPOD;
-    ESP_LOGI(TAG, "Gait generator initialized");
-    return ESP_OK;
-}
+// TODO: add interpolation for smoother transitions between commands and gaits, currently just jumps to new phase and speed immediately
+static void compute_leg(float leg_phase, float duty, float stride,
+                        float direction, int8_t hip_dir,
+                        float *out_hip, float *out_knee) {
 
-esp_err_t xGaitSetType(gait_type_t type) {
-    if (type >= 4) {
-        return ESP_ERR_INVALID_ARG;
+    // compute leg angles based on phase in step cycle, with simple trajectories 
+    if (leg_phase < duty) {
+        float swing_progress = leg_phase / duty;
+        float hip_offset = (-stride / 2.0f) + (stride * swing_progress);
+        *out_hip = HIP_NEUTRAL_DEG + (hip_offset * direction * hip_dir);
+        float lift = sinf(swing_progress * M_PI) * KNEE_LIFT_DEG;
+        *out_knee = KNEE_NEUTRAL_DEG + lift;
+    } else {
+        float stance_progress = (leg_phase - duty) / (1.0f - duty);
+        float hip_offset = (stride / 2.0f) - (stride * stance_progress);
+        *out_hip = HIP_NEUTRAL_DEG + (hip_offset * direction * hip_dir);
+        *out_knee = KNEE_NEUTRAL_DEG;
     }
-    current_gait = type;
-    ESP_LOGI(TAG, "Gait type set to %d", type);
-    return ESP_OK;
 }
 
-esp_err_t xGaitGetNeutralStance(leg_index_t leg_idx, leg_position_t *position) {
-    if (!position || leg_idx >= NUM_LEGS) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    // Neutral stance: legs angled outward at 45 degrees from body
-    float angle = atan2f(leg_attachments[leg_idx][1], leg_attachments[leg_idx][0]);
-    
-    // Distance from attachment point to foot in neutral stance
-    float stance_radius = sqrtf(LEG_FEMUR_LENGTH * LEG_FEMUR_LENGTH + 
-                               LEG_TIBIA_LENGTH * LEG_TIBIA_LENGTH);
-    
-    position->x = LEG_COXA_LENGTH + stance_radius * 0.7f * cosf(angle);  // 0.7 factor for angled stance
-    position->y = stance_radius * 0.7f * sinf(angle);
-    position->z = -DEFAULT_STANCE_HEIGHT;  // Negative because below body
-    
-    return ESP_OK;
-}
-
-// Calculate foot position during swing phase (lifted leg)
-static void vCalculateSwingPosition(float leg_phase, float duty_cycle,
-                                    const leg_position_t *start_pos,
-                                    const leg_position_t *end_pos,
-                                    float step_height,
-                                    leg_position_t *current_pos) {
-    // Swing phase: duty_cycle to 1.0
-    float swing_progress = (leg_phase - duty_cycle) / (1.0f - duty_cycle);
-    
-    // Linear interpolation for X and Y
-    current_pos->x = start_pos->x + swing_progress * (end_pos->x - start_pos->x);
-    current_pos->y = start_pos->y + swing_progress * (end_pos->y - start_pos->y);
-    
-    // Parabolic arc for Z (smooth lift and lower)
-    float height_progress = 4.0f * swing_progress * (1.0f - swing_progress);  // Peaks at 0.5
-    current_pos->z = start_pos->z + height_progress * step_height;
-}
-
-// Calculate foot position during stance phase (on ground)
-static void vCalculateStancePosition(float leg_phase, float duty_cycle,
-                                     const leg_position_t *start_pos,
-                                     const leg_position_t *end_pos,
-                                     leg_position_t *current_pos) {
-    // Stance phase: 0.0 to duty_cycle
-    float stance_progress = leg_phase / duty_cycle;
-    
-    // Linear interpolation (foot slides backward relative to body moving forward)
-    current_pos->x = start_pos->x + stance_progress * (end_pos->x - start_pos->x);
-    current_pos->y = start_pos->y + stance_progress * (end_pos->y - start_pos->y);
-    current_pos->z = start_pos->z;  // Stays at ground level
-}
-
-esp_err_t xGaitUpdate(const velocity_command_t *velocity, uint32_t dt_ms, gait_state_t *state) {
-    if (!velocity || !state) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    // Update global phase based on time
-    float phase_increment = (float)dt_ms / (float)GAIT_CYCLE_TIME_MS;
-    global_phase += phase_increment;
-    if (global_phase >= 1.0f) {
-        global_phase -= 1.0f;
-    }
-
-    state->global_phase = global_phase;
-    state->type = current_gait;
-    state->step_height = DEFAULT_STEP_HEIGHT;
-    state->stance_height = DEFAULT_STANCE_HEIGHT;
-
-    float duty_cycle = gait_duty_cycles[current_gait];
-
-    // Calculate displacement per gait cycle
-    float cycle_time_s = (float)GAIT_CYCLE_TIME_MS / 1000.0f;
-    float forward_displacement = velocity->forward_velocity * cycle_time_s;
-    float lateral_displacement = velocity->lateral_velocity * cycle_time_s;
-    float rotation_displacement = velocity->rotation_velocity * cycle_time_s;
-
-    // Update each leg
+static esp_err_t apply_angles(const leg_angles_t *angles) {
     for (int i = 0; i < NUM_LEGS; i++) {
-        // Calculate this leg's phase in its gait cycle
-        float leg_phase = global_phase + gait_phase_offsets[current_gait][i];
-        if (leg_phase >= 1.0f) {
-            leg_phase -= 1.0f;
-        }
-        state->legs[i].phase = leg_phase;
+        uint8_t hip_angle  = (uint8_t)fmaxf(0, fminf(180, angles->hip_angle[i]));
+        uint8_t knee_angle = (uint8_t)fmaxf(0, fminf(180, angles->knee_angle[i]));
 
-        // Determine if leg is in swing or stance
-        state->legs[i].in_swing = (leg_phase >= duty_cycle);
-
-        // Get neutral stance position for this leg
-        leg_position_t neutral_pos;
-        xGaitGetNeutralStance(i, &neutral_pos);
-
-        // Calculate body motion contribution to leg position
-        // As body moves forward, feet move backward relative to body
-        float body_rotation_rad = DEG_TO_RAD(rotation_displacement);
-        float leg_attach_radius = sqrtf(leg_attachments[i][0] * leg_attachments[i][0] + 
-                                       leg_attachments[i][1] * leg_attachments[i][1]);
-        
-        // Start and end positions for this leg's stride
-        leg_position_t stride_start, stride_end;
-        
-        // Stride start: half stride behind neutral
-        stride_start.x = neutral_pos.x + forward_displacement * 0.5f;
-        stride_start.y = neutral_pos.y + lateral_displacement * 0.5f;
-        stride_start.z = neutral_pos.z;
-        
-        // Stride end: half stride ahead of neutral
-        stride_end.x = neutral_pos.x - forward_displacement * 0.5f;
-        stride_end.y = neutral_pos.y - lateral_displacement * 0.5f;
-        stride_end.z = neutral_pos.z;
-
-        // Calculate current foot position based on phase
-        if (state->legs[i].in_swing) {
-            vCalculateSwingPosition(leg_phase, duty_cycle, 
-                                   &stride_end, &stride_start,
-                                   state->step_height,
-                                   &state->legs[i].position);
-        } else {
-            vCalculateStancePosition(leg_phase, duty_cycle,
-                                    &stride_start, &stride_end,
-                                    &state->legs[i].position);
+        esp_err_t ret = xPCA9685SetAngle(I2C_MASTER_NUM, PCA9685_BODY_ADDR,
+                                          leg_channels[i][0], hip_angle);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to set leg %d hip", i);
+            return ret;
         }
 
-        // Solve IK for this leg position
-        esp_err_t err = xGaitLegIK(i, &state->legs[i].position, &state->legs[i].angles);
-        if (err != ESP_OK) {
-            ESP_LOGW(TAG, "IK failed for leg %d", i);
+        ret = xPCA9685SetAngle(I2C_MASTER_NUM, PCA9685_BODY_ADDR,
+                               leg_channels[i][1], knee_angle);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to set leg %d knee", i);
+            return ret;
         }
+    }
+    return ESP_OK;
+}
+
+esp_err_t xGaitInit(void) {
+    // init gait system, put all legs in neutral position
+    current_gait = GAIT_TRIPOD;
+    current_command = MOVE_STOP;
+    current_speed = 0.5f;
+    master_phase = 0.0f;
+    active_offsets = tripod_offsets;
+    return xGaitStandNeutral();
+}
+
+void vGaitSetCommand(move_command_t cmd, float speed) {
+    // compute speed for legs based on command, with bounds checking on speed
+    if (speed < 0.0f) speed = 0.0f;
+    if (speed > 1.0f) speed = 1.0f;
+    current_command = cmd;
+    current_speed = speed;
+    if (cmd == MOVE_STOP) {
+        master_phase = 0.0f;
+    }
+}
+
+void vGaitSetType(gait_type_t type) {
+    // change gait walking type
+    current_gait = type;
+    switch (type) {
+        case GAIT_TRIPOD: active_offsets = tripod_offsets; break;
+        case GAIT_WAVE:   active_offsets = wave_offsets;   break;
+        case GAIT_RIPPLE: active_offsets = ripple_offsets;  break;
+    }
+    master_phase = 0.0f;
+    ESP_LOGI(TAG, "Gait changed to %d", type);
+}
+
+esp_err_t xGaitUpdate(const float *knee_corrections) {
+    if (current_command == MOVE_STOP) {
+        return ESP_OK;
+    }
+
+    // amount of updates needed to complete one full step cycle, based on speed. faster speed = faster phase increment.
+    float effective_cycle_ms = STEP_CYCLE_MS / fmaxf(current_speed, 0.1f);
+    float phase_increment = (float)GAIT_UPDATE_MS / effective_cycle_ms;
+
+    master_phase += phase_increment;
+    if (master_phase >= 1.0f) { master_phase -= 1.0f; }
+
+    float duty = gait_duty_cycle[current_gait];
+    float stride = HIP_STRIDE_DEG * current_speed;
+
+    float leg_direction[NUM_LEGS];
+
+    // states of walking: forward/backward/turning, determines leg movement directions. turning in place by having opposite directions on each side.
+    switch (current_command) {
+        case MOVE_FORWARD:
+            for (int i = 0; i < NUM_LEGS; i++) leg_direction[i] = 1.0f;
+            break;
+        case MOVE_BACKWARD:
+            for (int i = 0; i < NUM_LEGS; i++) leg_direction[i] = -1.0f;
+            break;
+        case MOVE_TURN_RIGHT:
+            for (int i = 0; i < 3; i++) leg_direction[i] = -1.0f;
+            for (int i = 3; i < 6; i++) leg_direction[i] =  1.0f;
+            break;
+        case MOVE_TURN_LEFT:
+            for (int i = 0; i < 3; i++) leg_direction[i] =  1.0f;
+            for (int i = 3; i < 6; i++) leg_direction[i] = -1.0f;
+            break;
+        default:
+            return ESP_OK;
+    }
+
+    // send to all legs, compute target and distance from target based on phase in step cycle
+    for (int i = 0; i < NUM_LEGS; i++) {
+        float leg_phase = master_phase + active_offsets[i];
+        if (leg_phase >= 1.0f) leg_phase -= 1.0f;
+
+        compute_leg(leg_phase, duty, stride, leg_direction[i], hip_direction[i],
+                    &current_angles.hip_angle[i], &current_angles.knee_angle[i]);
+
+        if (knee_corrections != NULL) {
+            current_angles.knee_angle[i] += knee_corrections[i] * knee_direction[i];
+        }
+    }
+
+    // apply the angles to the servos
+    return apply_angles(&current_angles);
+}
+
+esp_err_t xGaitStandNeutral(void) {
+    ESP_LOGI(TAG, "Moving to neutral stance");
+
+    // move all legs to neutral position gradually to avoid sudden jerks, with simple step interpolation
+    bool still_moving = true;
+    while (still_moving) {
+        still_moving = false;
+        for (int i = 0; i < NUM_LEGS; i++) {
+            // graudally step towards neutral for all legs
+            
+            float hip_err  = (float)HIP_NEUTRAL_DEG  - current_angles.hip_angle[i];
+            float knee_err = (float)KNEE_NEUTRAL_DEG - current_angles.knee_angle[i];
+
+            if (fabsf(hip_err) > NEUTRAL_STEP_DEG) {
+                current_angles.hip_angle[i]  += (hip_err  > 0.0f) ? NEUTRAL_STEP_DEG : -NEUTRAL_STEP_DEG;
+                still_moving = true;
+            } else {
+                current_angles.hip_angle[i]  = HIP_NEUTRAL_DEG;
+            }
+
+            if (fabsf(knee_err) > NEUTRAL_STEP_DEG) {
+                current_angles.knee_angle[i] += (knee_err > 0.0f) ? NEUTRAL_STEP_DEG : -NEUTRAL_STEP_DEG;
+                still_moving = true;
+            } else {
+                current_angles.knee_angle[i] = KNEE_NEUTRAL_DEG;
+            }
+        }
+
+        esp_err_t ret = apply_angles(&current_angles);
+        if (ret != ESP_OK) return ret;
+
+        if (still_moving) vTaskDelay(pdMS_TO_TICKS(GAIT_UPDATE_MS));
     }
 
     return ESP_OK;
 }
 
-esp_err_t xGaitLegIK(leg_index_t leg_idx, const leg_position_t *target, leg_angles_t *angles) {
-    if (!target || !angles || leg_idx >= NUM_LEGS) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    // Step 1: Solve coxa angle (horizontal rotation)
-    // Coxa rotates to point toward target in XY plane
-    angles->coxa = RAD_TO_DEG(atan2f(target->y, target->x));
-
-    // Step 2: Calculate distance from coxa joint to target
-    float horizontal_dist = sqrtf(target->x * target->x + target->y * target->y) - LEG_COXA_LENGTH;
-    float vertical_dist = -target->z;  // Negative because Z is down
-    float target_dist = sqrtf(horizontal_dist * horizontal_dist + vertical_dist * vertical_dist);
-
-    // Check reachability
-    float max_reach = LEG_FEMUR_LENGTH + LEG_TIBIA_LENGTH;
-    float min_reach = fabsf(LEG_FEMUR_LENGTH - LEG_TIBIA_LENGTH);
-    
-    if (target_dist > max_reach || target_dist < min_reach) {
-        ESP_LOGW(TAG, "Leg %d target unreachable: dist=%.2f, range=[%.2f, %.2f]",
-                 leg_idx, target_dist, min_reach, max_reach);
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    // Step 3: Solve femur and tibia using 2D IK (law of cosines)
-    // Calculate tibia angle
-    float cos_tibia = (LEG_FEMUR_LENGTH * LEG_FEMUR_LENGTH + 
-                       LEG_TIBIA_LENGTH * LEG_TIBIA_LENGTH - 
-                       target_dist * target_dist) / 
-                      (2.0f * LEG_FEMUR_LENGTH * LEG_TIBIA_LENGTH);
-    cos_tibia = fmaxf(-1.0f, fminf(1.0f, cos_tibia));  // Clamp for numerical stability
-    
-    angles->tibia = RAD_TO_DEG(acosf(cos_tibia));
-
-    // Calculate femur angle
-    float angle_to_target = atan2f(vertical_dist, horizontal_dist);
-    float cos_femur_offset = (LEG_FEMUR_LENGTH * LEG_FEMUR_LENGTH + 
-                              target_dist * target_dist - 
-                              LEG_TIBIA_LENGTH * LEG_TIBIA_LENGTH) / 
-                             (2.0f * LEG_FEMUR_LENGTH * target_dist);
-    cos_femur_offset = fmaxf(-1.0f, fminf(1.0f, cos_femur_offset));
-    float femur_offset = acosf(cos_femur_offset);
-    
-    angles->femur = RAD_TO_DEG(angle_to_target + femur_offset);
-
-    return ESP_OK;
+leg_angles_t xGaitGetAngles(void) {
+    return current_angles;
 }

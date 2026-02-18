@@ -3,6 +3,7 @@
 
 #include "esp_err.h"
 #include <stdint.h>
+#include <stdbool.h>
 
 /**
  * @brief Initialize vision processor
@@ -63,18 +64,6 @@ void vThresholdRedRange(uint8_t *hsv_frame, uint8_t *binary_mask, int width, int
 int iFindLargestBlob(uint8_t *binary_mask, int width, int height, int *centroid_x, int *centroid_y);
 
 /**
- * @brief Calculate blob centroid
- *
- * Computes center of mass for binary blob
- *
- * @param blob_mask Binary blob mask
- * @param blob_size Number of pixels in blob
- * @param x Output X centroid coordinate
- * @param y Output Y centroid coordinate
- */
-void vCalculateCentroid(uint8_t *blob_mask, int blob_size, int *x, int *y);
-
-/**
  * @brief Convert pixel coordinate to bearing angle
  *
  * Maps pixel X position to horizontal angle
@@ -84,5 +73,22 @@ void vCalculateCentroid(uint8_t *blob_mask, int blob_size, int *x, int *y);
  * @return float Bearing angle in radians
  */
 float fPixelToAngle(int pixel_x, int frame_width);
+
+/**
+ * @brief Read distance from VL53L0X TOF sensor
+ *
+ * Returns last valid reading on timeout or out-of-range.
+ * Uses continuous mode for fast readings.
+ *
+ * @return distance in millimeters, 0 if sensor not available
+ */
+uint16_t uiTofReadDistanceMm(void);
+
+/**
+ * @brief Check if TOF sensor is initialized and available
+ *
+ * @return true if sensor is ready
+ */
+bool bTofIsAvailable(void);
 
 #endif

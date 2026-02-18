@@ -13,28 +13,12 @@
 // @brief Primary I2C bus - PCA9685 servo drivers, MPU6050, VL53L0X
 #define PIN_I2C0_SDA            GPIO_NUM_21
 #define PIN_I2C0_SCL            GPIO_NUM_22
-#define I2C0_FREQ_HZ            400000      // 400kHz fast mode
+#define I2C0_FREQ_HZ            100000      // 100kHz 
 #define I2C0_PORT               I2C_NUM_0
-
-/**
- * @brief Secondary I2C bus (optional)
- * Use if you need to isolate sensors from servo drivers to avoid
- * bus contention or if a PCA9685 is pulling the bus down.
- */
-#define PIN_I2C1_SDA            GPIO_NUM_18
-#define PIN_I2C1_SCL            GPIO_NUM_19
-#define I2C1_FREQ_HZ            400000
-#define I2C1_PORT               I2C_NUM_1
 
 /* ========================================================================== */
 /*  I2C Device Addresses                                                      */
 /* ========================================================================== */
-
-// PCA9685 servo driver boards (7-bit addresses)
-#define PCA9685_ADDR_LEGS_0     0x40    // Legs 1-2 (channels 0-15)  
-#define PCA9685_ADDR_LEGS_1     0x41    // Legs 3-4 (channels 0-15)  
-#define PCA9685_ADDR_LEGS_2     0x42    // Legs 5-6 (channels 0-11)  
-#define PCA9685_ADDR_ARM        0x43    // Arm servos (channels 0-5) */
 
 /** Sensors */
 #define MPU6050_ADDR            0x68    // AD0 pin low 
@@ -56,7 +40,7 @@
 /** Battery voltage monitoring via voltage divider */
 #define PIN_VBAT_ADC            GPIO_NUM_34     // ADC1_CH6, input only
 #define VBAT_ADC_CHANNEL        ADC1_CHANNEL_6
-#define VBAT_DIVIDER_RATIO      3.0f            /* Adjust to your divider R1/R2 */
+#define VBAT_DIVIDER_RATIO      1.0f
 
 /** ACS712 current sensor analog output */
 #define PIN_CURRENT_ADC         GPIO_NUM_35     // ADC1_CH7, input only
@@ -172,7 +156,7 @@
 /* ========================================================================== */
 /*  Arm Servo Channel Mapping                                                 */
 /*                                                                            */
-/*  6-DOF: base, shoulder, elbow, wrist_pitch, wrist_roll, gripper            */
+/*  3-DOF: base, shoulder, elbow, gripper                                     */
 /* ========================================================================== */
 
 #define ARM_BASE_BOARD          PCA9685_ADDR_ARM
@@ -181,11 +165,7 @@
 #define ARM_SHOULDER_CH         1
 #define ARM_ELBOW_BOARD         PCA9685_ADDR_ARM
 #define ARM_ELBOW_CH            2
-#define ARM_WRIST_PITCH_BOARD   PCA9685_ADDR_ARM
-#define ARM_WRIST_PITCH_CH      3
-#define ARM_WRIST_ROLL_BOARD    PCA9685_ADDR_ARM
-#define ARM_WRIST_ROLL_CH       4
 #define ARM_GRIPPER_BOARD       PCA9685_ADDR_ARM
-#define ARM_GRIPPER_CH          5
+#define ARM_GRIPPER_CH          3
 
 #endif

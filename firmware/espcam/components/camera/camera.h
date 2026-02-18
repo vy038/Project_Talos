@@ -3,6 +3,6 @@
 
 #include "esp_camera.h"
 
-esp_err_t camera_init(void);
+esp_err_t xCameraInit(void);
 
 #endif

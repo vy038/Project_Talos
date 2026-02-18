@@ -17,7 +17,3 @@ __pycache__/
 # OS files
 .DS_Store
 Thumbs.db
-
-# Keep sdkconfig (debatable - some projects ignore it)
-# If you want different configs per machine, uncomment:
-# sdkconfig
