@@ -9,6 +9,10 @@
 #define ADC_DEFAULT_BITWIDTH    ADC_BITWIDTH_12      // 12-bit resolution (0-4095)
 #define ADC_VREF                3.3f                 // reference voltage
 
+// channel assignments
+#define VBAT_ADC_CHANNEL        ADC_CHANNEL_6        // GPIO 34 - battery voltage
+#define CURRENT_ADC_CHANNEL     ADC_CHANNEL_7        // GPIO 35 - ACS712 current sensor
+
 /**
  * @brief Initialize ADC unit with multiple channels
  *
