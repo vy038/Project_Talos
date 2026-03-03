@@ -49,8 +49,11 @@
 #define HIP_NEUTRAL_DEG     90      // hip centered = leg straight out
 #define KNEE_NEUTRAL_DEG    90      // comfortable standing height
 
-#define HIP_STRIDE_DEG      20      // hip swing amplitude (degrees). start small.
+#define HIP_STRIDE_DEG      60      // hip swing amplitude (degrees). start small.
 #define KNEE_LIFT_DEG       25      // how high foot lifts during swing
+
+// #define HIP_STRIDE_DEG      10   // cut in half from 20
+// #define KNEE_LIFT_DEG       15   // cut in half from 25
 
 #define STEP_CYCLE_MS       800     // one complete step cycle (ms). 600-1000 typical.
 #define GAIT_UPDATE_MS      20      // update interval. matches 50Hz servo PWM.
@@ -99,6 +102,27 @@ void vGaitSetCommand(move_command_t cmd, float speed);
  * Sets type of gait (tripod/wave/ripple). Each has different leg phase offsets and duty cycles.
  */
 void vGaitSetType(gait_type_t type);
+
+/**
+ * @brief Apply computed angles to servos with retry logic
+ * 
+ * Takes computed leg angles and sends them to the servos. Retries on failure with I2C bus recovery.
+ * 
+ * @param angles target angles for all legs
+ * @return esp_err_t ESP_OK on success, error code on failure
+ */
+esp_err_t xApplyAngles(const leg_angles_t *angles);
+
+/**
+ * @brief Set servo angle with retry logic
+ * 
+ * Sets angle for a single servo channel, with retries and I2C bus recovery on failure. Used by xGaitUpdate to apply computed angles to servos.
+ * 
+ * @param channel servo channel
+ * @param angle target angle
+ * @return esp_err_t ESP_OK on success, error code on failure
+ */
+esp_err_t xBodySetAngleWithRetry(uint8_t channel, uint8_t angle);
 
 /**
  * @brief Call at GAIT_UPDATE_MS intervals. Advances phase, computes angles, writes servos.

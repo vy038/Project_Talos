@@ -18,9 +18,10 @@
 #define MODE1_AI                0x20
 #define MODE1_RESTART           0x80
 
-// servo pulse range (conservative default, adjust per servo model)
-#define SERVO_MIN_PULSE_US      1000
-#define SERVO_MAX_PULSE_US      2000
+// servo PWM and pulse range
+#define SERVO_PWM_FREQ_HZ       50      // standard servo frequency
+#define SERVO_MIN_PULSE_US      500
+#define SERVO_MAX_PULSE_US      2500 
 
 // servo command structure
 typedef struct {

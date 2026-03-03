@@ -37,6 +37,17 @@ esp_err_t xArmControlInit(void);
 esp_err_t xArmSetAngles(const arm_angles_t *angles);
 
 /**
+ * @brief Set angle for a single joint with retry logic
+ *
+ * This function attempts to set the angle for a specific joint, retrying on failure and performing I2C bus recovery if necessary.
+ *
+ * @param channel Servo channel (e.g., ARM_BASE_CH)
+ * @param angle Desired angle in degrees (0-180)
+ * @return esp_err_t ESP_OK on success, error code on failure
+ */
+esp_err_t xArmSetAngleWithRetry(uint8_t channel, uint8_t angle);
+
+/**
  * @brief Update arm joint angles towards target
  *
  * This function should be called periodically (e.g., in a timer or main loop) to smoothly move the arm towards the target angles. It will handle incremental updates and state transitions.

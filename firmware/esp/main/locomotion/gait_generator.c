@@ -1,3 +1,12 @@
+/**
+ * @file gait_generator.c
+ * @brief 2-DOF hexapod gait generation and servo coordination
+ *
+ * Coordinates 12 servos (6 legs x 2 DOF) on the body PCA9685 (0x40) for
+ * walking and turning. Supports tripod, wave, and ripple gait patterns.
+ * All I2C transactions use retry with bus recovery on timeout.
+ */
+
 #include "gait_generator.h"
 #include "balance_control.h"
 #include "esp_log.h"
@@ -13,28 +22,28 @@ static const char *TAG = "GAIT";
 
 /* GAIT DIAGRAM (top view)
 *
-*       [3]                    [12]
+*       [4]                    [11]
 *          \                  /
 *           [0]----FRONT---[15]
 *            |              |
-*      [4]--[1]----BODY----[14]--[11]
+*      [5]--[1]----BODY----[14]--[10]
 *            |              |
 *           [2]----REAR----[13]
 *          /                  \ 
-*       [5]                    [10]
+*       [6]                    [9]
 */
 
 static const uint8_t leg_channels[NUM_LEGS][DOF_PER_LEG] = {
-    {15, 12},    // Leg 0: Front-Right  hip=ch15, knee=TODO
-    {14, 11},    // Leg 1: Mid-Right    hip=ch14, knee=TODO
-    {13, 10},    // Leg 2: Rear-Right   hip=ch13, knee=TODO
-    {2,  5},    // Leg 3: Rear-Left    hip=ch2,  knee=TODO
-    {1,  4},    // Leg 4: Mid-Left     hip=ch1,  knee=TODO
-    {0,  3},    // Leg 5: Front-Left   hip=ch0,  knee=TODO
+    {15, 11},    // Leg 0: Front-Right  hip=ch15, knee=ch11
+    {14, 10},    // Leg 1: Mid-Right    hip=ch14, knee=ch10
+    {13, 9},     // Leg 2: Rear-Right   hip=ch13, knee=ch9
+    {2,  6},    // Leg 3: Rear-Left    hip=ch2,  knee=ch6
+    {1,  5},    // Leg 4: Mid-Left     hip=ch1,  knee=ch5
+    {0,  4},    // Leg 5: Front-Left   hip=ch0,  knee=ch4
 };
 
 // gait configs
-static const int8_t hip_direction[NUM_LEGS]  = { 1,  1,  1, -1, -1, -1};
+static const int8_t hip_direction[NUM_LEGS]  = {-1, -1, -1,  1,  1,  1};
 static const int8_t knee_direction[NUM_LEGS] = { 1,  1,  1, -1, -1, -1};
 
 static const float tripod_offsets[NUM_LEGS] = {
@@ -68,37 +77,69 @@ static void compute_leg(float leg_phase, float duty, float stride,
                         float direction, int8_t hip_dir,
                         float *out_hip, float *out_knee) {
 
-    // compute leg angles based on phase in step cycle, with simple trajectories 
+    // compute leg angles based on phase in step cycle
+    // swing = foot in air, moves forward. stance = foot on ground, pushes body.
+    // cosine easing: smooth_t goes 0→1 with soft acceleration/deceleration
     if (leg_phase < duty) {
         float swing_progress = leg_phase / duty;
-        float hip_offset = (-stride / 2.0f) + (stride * swing_progress);
+        float smooth_t = 0.5f * (1.0f - cosf(swing_progress * M_PI));
+        float hip_offset = (-stride / 2.0f) + (stride * smooth_t);
         *out_hip = HIP_NEUTRAL_DEG + (hip_offset * direction * hip_dir);
-        float lift = sinf(swing_progress * M_PI) * KNEE_LIFT_DEG;
-        *out_knee = KNEE_NEUTRAL_DEG + lift;
+
+        // smooth knee lift: cosine ramp up 25%, hold 50%, cosine ramp down 25%
+        float lift;
+        if (swing_progress < 0.25f) {
+            float t = swing_progress / 0.25f;
+            lift = 0.5f * (1.0f - cosf(t * M_PI)) * KNEE_LIFT_DEG;
+        } else if (swing_progress < 0.75f) {
+            lift = KNEE_LIFT_DEG;
+        } else {
+            float t = (swing_progress - 0.75f) / 0.25f;
+            lift = 0.5f * (1.0f + cosf(t * M_PI)) * KNEE_LIFT_DEG;
+        }
+        *out_knee = KNEE_NEUTRAL_DEG - lift;
     } else {
         float stance_progress = (leg_phase - duty) / (1.0f - duty);
-        float hip_offset = (stride / 2.0f) - (stride * stance_progress);
+        float smooth_t = 0.5f * (1.0f - cosf(stance_progress * M_PI));
+        float hip_offset = (stride / 2.0f) - (stride * smooth_t);
         *out_hip = HIP_NEUTRAL_DEG + (hip_offset * direction * hip_dir);
         *out_knee = KNEE_NEUTRAL_DEG;
     }
 }
 
-static esp_err_t apply_angles(const leg_angles_t *angles) {
+#define I2C_RETRIES 3
+
+esp_err_t xBodySetAngleWithRetry(uint8_t channel, uint8_t angle) {
+    esp_err_t ret;
+    for (int attempt = 0; attempt < I2C_RETRIES; attempt++) {
+        ret = xPCA9685SetAngle(I2C_MASTER_NUM, PCA9685_BODY_ADDR, channel, angle);
+        if (ret == ESP_OK) return ESP_OK;
+        ESP_LOGW(TAG, "I2C retry %d for ch%d", attempt + 1, channel);
+        if (ret == ESP_ERR_TIMEOUT) {
+            // bus is stuck, recover before retrying
+            xI2cBusRecovery();
+            // PCA9685 needs reinit after bus recovery
+            xPCA9685Init(I2C_MASTER_NUM, PCA9685_BODY_ADDR, SERVO_PWM_FREQ_HZ);
+        }
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
+    return ret;
+}
+
+esp_err_t xApplyAngles(const leg_angles_t *angles) {
     for (int i = 0; i < NUM_LEGS; i++) {
         uint8_t hip_angle  = (uint8_t)fmaxf(0, fminf(180, angles->hip_angle[i]));
         uint8_t knee_angle = (uint8_t)fmaxf(0, fminf(180, angles->knee_angle[i]));
 
-        esp_err_t ret = xPCA9685SetAngle(I2C_MASTER_NUM, PCA9685_BODY_ADDR,
-                                          leg_channels[i][0], hip_angle);
+        esp_err_t ret = xBodySetAngleWithRetry(leg_channels[i][0], hip_angle);
         if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to set leg %d hip", i);
+            ESP_LOGE(TAG, "Failed to set leg %d hip after %d retries", i, I2C_RETRIES);
             return ret;
         }
 
-        ret = xPCA9685SetAngle(I2C_MASTER_NUM, PCA9685_BODY_ADDR,
-                               leg_channels[i][1], knee_angle);
+        ret = xBodySetAngleWithRetry(leg_channels[i][1], knee_angle);
         if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to set leg %d knee", i);
+            ESP_LOGE(TAG, "Failed to set leg %d knee after %d retries", i, I2C_RETRIES);
             return ret;
         }
     }
@@ -112,7 +153,13 @@ esp_err_t xGaitInit(void) {
     current_speed = 0.5f;
     master_phase = 0.0f;
     active_offsets = tripod_offsets;
-    return xGaitStandNeutral();
+
+    // set angles to neutral BEFORE first write to avoid servo jump from 0°
+    for (int i = 0; i < NUM_LEGS; i++) {
+        current_angles.hip_angle[i]  = HIP_NEUTRAL_DEG;
+        current_angles.knee_angle[i] = KNEE_NEUTRAL_DEG;
+    }
+    return xApplyAngles(&current_angles);
 }
 
 void vGaitSetCommand(move_command_t cmd, float speed) {
@@ -180,6 +227,7 @@ esp_err_t xGaitUpdate(const float *knee_corrections) {
         float leg_phase = master_phase + active_offsets[i];
         if (leg_phase >= 1.0f) leg_phase -= 1.0f;
 
+        // compute single leg angles based on gait phase and walking state
         compute_leg(leg_phase, duty, stride, leg_direction[i], hip_direction[i],
                     &current_angles.hip_angle[i], &current_angles.knee_angle[i]);
 
@@ -189,7 +237,7 @@ esp_err_t xGaitUpdate(const float *knee_corrections) {
     }
 
     // apply the angles to the servos
-    return apply_angles(&current_angles);
+    return xApplyAngles(&current_angles);
 }
 
 esp_err_t xGaitStandNeutral(void) {
@@ -220,7 +268,7 @@ esp_err_t xGaitStandNeutral(void) {
             }
         }
 
-        esp_err_t ret = apply_angles(&current_angles);
+        esp_err_t ret = xApplyAngles(&current_angles);
         if (ret != ESP_OK) return ret;
 
         if (still_moving) vTaskDelay(pdMS_TO_TICKS(GAIT_UPDATE_MS));

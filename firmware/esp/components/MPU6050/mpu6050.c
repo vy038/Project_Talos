@@ -1,20 +1,52 @@
 /**
- * MPU6050 IMU Driver
- * I2C Address: 0x68
- * Provides: Accelerometer, Gyroscope, Temperature
+ * @file mpu6050.c
+ * @brief MPU6050 6-axis IMU driver (I2C address 0x68)
+ *
+ * Provides accelerometer, gyroscope, and computed roll/pitch.
+ * All I2C transactions use retry with bus recovery on timeout.
  */
 
 #include "mpu6050.h"
 #include "i2c.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include <math.h>
 
 // config values for gyro and accel
 #define ACCEL_SENSITIVITY_2G        16384.0f
 #define GYRO_SENSITIVITY_250        131.0f
+#define I2C_RETRIES                 3
 
 static const char *TAG = "MPU6050";
+
+static esp_err_t mpu_read_with_retry(uint8_t reg, uint8_t *data, size_t len) {
+    esp_err_t ret;
+    for (int attempt = 0; attempt < I2C_RETRIES; attempt++) {
+        ret = xI2cReadBytes(MPU6050_ADDR, reg, data, len);
+        if (ret == ESP_OK) return ESP_OK;
+        ESP_LOGW(TAG, "I2C retry %d for reg 0x%02X", attempt + 1, reg);
+        if (ret == ESP_ERR_TIMEOUT) {
+            xI2cBusRecovery();
+        }
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
+    return ret;
+}
+
+static esp_err_t mpu_write_with_retry(uint8_t reg, uint8_t val) {
+    esp_err_t ret;
+    for (int attempt = 0; attempt < I2C_RETRIES; attempt++) {
+        ret = xI2cWriteByte(MPU6050_ADDR, reg, val);
+        if (ret == ESP_OK) return ESP_OK;
+        ESP_LOGW(TAG, "I2C retry %d for reg 0x%02X", attempt + 1, reg);
+        if (ret == ESP_ERR_TIMEOUT) {
+            xI2cBusRecovery();
+        }
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
+    return ret;
+}
 
 // calibration data (lives here, NOT in the header)
 // if this is static in the header, every .c file gets its own copy
@@ -30,7 +62,7 @@ esp_err_t xMPU6050_init(void) {
 
     // verify if device is connected
     uint8_t who_am_i;
-    esp_err_t ret = xI2cReadByte(MPU6050_ADDR, MPU6050_REG_WHO_AM_I, &who_am_i);
+    esp_err_t ret = mpu_read_with_retry(MPU6050_REG_WHO_AM_I, &who_am_i, 1);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to communicate with MPU6050");
         return ret;
@@ -42,16 +74,16 @@ esp_err_t xMPU6050_init(void) {
     }
 
     // awake from sleep and give time to wake up
-    ret = xI2cWriteByte(MPU6050_ADDR, MPU6050_REG_PWR_MGMT_1, 0x00);
+    ret = mpu_write_with_retry(MPU6050_REG_PWR_MGMT_1, 0x00);
     if (ret != ESP_OK) return ret;
     vTaskDelay(pdMS_TO_TICKS(100));
 
     // config gyro: +/- 250 deg/s (sensitivity = 131 LSB/deg/s)
-    ret = xI2cWriteByte(MPU6050_ADDR, MPU6050_REG_GYRO_CONFIG, 0x00);
+    ret = mpu_write_with_retry(MPU6050_REG_GYRO_CONFIG, 0x00);
     if (ret != ESP_OK) return ret;
 
     // config accel: +/- 2g (sensitivity = 16384 LSB/g)
-    ret = xI2cWriteByte(MPU6050_ADDR, MPU6050_REG_ACCEL_CONFIG, 0x00);
+    ret = mpu_write_with_retry(MPU6050_REG_ACCEL_CONFIG, 0x00);
     if (ret != ESP_OK) return ret;
 
     ESP_LOGI(TAG, "MPU6050 initialized");
@@ -63,7 +95,7 @@ esp_err_t xMPU6050_read(mpu6050_data_t *data) {
     uint8_t raw_data[14];
 
     // reads all 14 adjacent registers and puts them into raw data array
-    esp_err_t ret = xI2cReadBytes(MPU6050_ADDR, MPU6050_REG_ACCEL_XOUT_H, raw_data, 14);
+    esp_err_t ret = mpu_read_with_retry(MPU6050_REG_ACCEL_XOUT_H, raw_data, 14);
     if (ret != ESP_OK) return ret;
 
     // accel data (cast BEFORE the OR so sign extension works correctly)
