@@ -1,4 +1,9 @@
-// ik_solver.c
+/**
+ * @file ik_solver.c
+ * @brief Analytic inverse kinematics solver for the 3-DOF robot arm.
+ *
+ * See ik_solver.h for coordinate conventions and tuning constants.
+ */
 #include "ik_solver.h"
 #include <math.h>
 #include "esp_log.h"
@@ -92,6 +97,22 @@ esp_err_t xIKSolve(const ik_target_t *target, ik_solution_t *solution) {
 
     ESP_LOGD(TAG, "IK: base=%.1f, shoulder=%.1f, elbow=%.1f",
              solution->base_rotation, solution->shoulder, solution->elbow);
+
+    return ESP_OK;
+}
+
+esp_err_t xIKCameraToArm(const ik_target_t *camera_coords, ik_target_t *arm_coords) {
+    if (!camera_coords || !arm_coords) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    arm_coords->x = camera_coords->x + CAMERA_OFFSET_FORWARD_MM;
+    arm_coords->y = camera_coords->y + CAMERA_OFFSET_LATERAL_MM;
+    arm_coords->z = camera_coords->z + CAMERA_OFFSET_VERTICAL_MM;
+
+    ESP_LOGD(TAG, "Camera->Arm: (%.1f, %.1f, %.1f) -> (%.1f, %.1f, %.1f)",
+             camera_coords->x, camera_coords->y, camera_coords->z,
+             arm_coords->x,    arm_coords->y,    arm_coords->z);
 
     return ESP_OK;
 }
