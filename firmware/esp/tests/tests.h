@@ -30,6 +30,7 @@
 #define TEST_UART               5
 #define TEST_POWER              6
 #define TEST_GAIT               7
+#define TEST_ARM                8
 
 /* ========================================================================== */
 /*  Test function declarations                                                 */
@@ -42,6 +43,7 @@ void test_adc(void);
 void test_uart(void);
 void test_power(void);
 void test_gait(void);
+void test_arm(void);
 
 /* ========================================================================== */
 /*  Test runner                                                                */
@@ -84,6 +86,10 @@ static inline void run_test(void) {
         case TEST_GAIT:
             printf("[TEST] Gait Generator\n");
             test_gait();
+            break;
+        case TEST_ARM:
+            printf("[TEST] Arm Range-of-Motion\n");
+            test_arm();
             break;
         default:
             printf("[INFO] No test selected. Set TEST_SELECT in main.c\n");

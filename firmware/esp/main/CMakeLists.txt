@@ -7,8 +7,11 @@ idf_component_register(
          "../tests/test_uart.c"
          "../tests/test_power.c"
          "../tests/test_gait.c"
+         "../tests/test_arm.c"
          "locomotion/gait_generator.c"
          "locomotion/balance_control.c"
-    INCLUDE_DIRS "." "../tests" "locomotion"
+         "arm/arm_control.c"
+         "arm/ik_solver.c"
+    INCLUDE_DIRS "." "../tests" "locomotion" "arm"
     REQUIRES I2C servo MPU6050 ADC power_monitor UART
 )

@@ -17,10 +17,10 @@
 
 static const char *TAG = "ARM";
 
-#define ARM_BASE_CH      0
-#define ARM_SHOULDER_CH  1
-#define ARM_ELBOW_CH     2
-#define ARM_GRIPPER_CH   5
+#define ARM_BASE_CH      6
+#define ARM_SHOULDER_CH  7
+#define ARM_ELBOW_CH     8
+#define ARM_GRIPPER_CH   9
 
 #define ARM_STEP_DEG    2.0f
 #define ANGLE_TOLERANCE 2.0f

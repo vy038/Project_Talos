@@ -6,7 +6,7 @@
 /* ========================================================================== */
 /*  Select which test to run (comment out for normal operation)                */
 /* ========================================================================== */
-#define TEST_SELECT TEST_GAIT
+#define TEST_SELECT TEST_ARM
 #include "tests.h"
 
 void app_main(void) {

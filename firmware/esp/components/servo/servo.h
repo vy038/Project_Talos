@@ -6,7 +6,7 @@
 
 // I2C addresses
 #define PCA9685_BODY_ADDR       0x40
-#define PCA9685_ARM_ADDR        0x41
+#define PCA9685_ARM_ADDR        PCA9685_BODY_ADDR   // arm shares body board
 
 // register addresses
 #define PCA9685_REG_MODE1       0x00

@@ -22,24 +22,24 @@ static const char *TAG = "GAIT";
 
 /* GAIT DIAGRAM (top view)
 *
-*       [4]                    [11]
+*       [3]                    [12]
 *          \                  /
 *           [0]----FRONT---[15]
 *            |              |
-*      [5]--[1]----BODY----[14]--[10]
+*      [4]--[1]----BODY----[14]--[11]
 *            |              |
 *           [2]----REAR----[13]
 *          /                  \ 
-*       [6]                    [9]
+*       [5]                    [10]
 */
 
 static const uint8_t leg_channels[NUM_LEGS][DOF_PER_LEG] = {
-    {15, 11},    // Leg 0: Front-Right  hip=ch15, knee=ch11
-    {14, 10},    // Leg 1: Mid-Right    hip=ch14, knee=ch10
-    {13, 9},     // Leg 2: Rear-Right   hip=ch13, knee=ch9
-    {2,  6},    // Leg 3: Rear-Left    hip=ch2,  knee=ch6
-    {1,  5},    // Leg 4: Mid-Left     hip=ch1,  knee=ch5
-    {0,  4},    // Leg 5: Front-Left   hip=ch0,  knee=ch4
+    {15, 12},    // Leg 0: Front-Right  hip=ch15, knee=ch12
+    {14, 11},    // Leg 1: Mid-Right    hip=ch14, knee=ch11
+    {13, 10},    // Leg 2: Rear-Right   hip=ch13, knee=ch10
+    {2,  5},    // Leg 3: Rear-Left    hip=ch2,  knee=ch5
+    {1,  4},    // Leg 4: Mid-Left     hip=ch1,  knee=ch4
+    {0,  3},    // Leg 5: Front-Left   hip=ch0,  knee=ch3
 };
 
 // gait configs
@@ -72,7 +72,6 @@ static float master_phase = 0.0f;
 static leg_angles_t current_angles = {0};
 static const float *active_offsets = tripod_offsets;
 
-// TODO: add interpolation for smoother transitions between commands and gaits, currently just jumps to new phase and speed immediately
 static void compute_leg(float leg_phase, float duty, float stride,
                         float direction, int8_t hip_dir,
                         float *out_hip, float *out_knee) {

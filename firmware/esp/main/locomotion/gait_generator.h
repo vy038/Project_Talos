@@ -23,14 +23,20 @@
  * Left and right sides get opposite hip directions.
  * Turn right: right legs push backward, left legs push forward.
  *
- * LEG LAYOUT (top view, front at top):
- *     [5]---FRONT---[0]
- *      |             |
- *     [4]---body----[1]
- *      |             |
- *     [3]---REAR----[2]
+ * GAIT DIAGRAM (top view)
  *
- * Right side = legs 0,1,2. Left side = legs 3,4,5.
+ *       [3]                    [12]
+ *          \                  /
+ *           [0]----FRONT---[15]
+ *            |              |
+ *      [4]--[1]----BODY----[14]--[11]
+ *            |              |
+ *           [2]----REAR----[13]
+ *          /                  \ 
+ *       [5]                    [10]
+ *
+ *
+ * Right side = legs 15,14,13. Left side = legs 0,1,2.
  */
 
 #ifndef GAIT_GENERATOR_H
