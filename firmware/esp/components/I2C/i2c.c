@@ -103,6 +103,20 @@ esp_err_t xI2cWriteByte(uint8_t dev_addr, uint8_t reg_addr, uint8_t data) {
     esp_err_t ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, I2C_TIMEOUT_MS / portTICK_PERIOD_MS);
     i2c_cmd_link_delete(cmd);
 
+    if (ret == ESP_ERR_TIMEOUT) {
+        ESP_LOGW(TAG, "Write timeout 0x%02X reg 0x%02X — recovering bus", dev_addr, reg_addr);
+        if (xI2cBusRecovery() == ESP_OK) {
+            cmd = i2c_cmd_link_create();
+            i2c_master_start(cmd);
+            i2c_master_write_byte(cmd, (dev_addr << 1) | I2C_MASTER_WRITE, true);
+            i2c_master_write_byte(cmd, reg_addr, true);
+            i2c_master_write_byte(cmd, data, true);
+            i2c_master_stop(cmd);
+            ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, I2C_TIMEOUT_MS / portTICK_PERIOD_MS);
+            i2c_cmd_link_delete(cmd);
+        }
+    }
+
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Write to 0x%02X reg 0x%02X failed: %s",
                  dev_addr, reg_addr, esp_err_to_name(ret));
@@ -122,6 +136,20 @@ esp_err_t xI2cWriteBytes(uint8_t dev_addr, uint8_t reg_addr, uint8_t *data, size
 
     esp_err_t ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, I2C_TIMEOUT_MS / portTICK_PERIOD_MS);
     i2c_cmd_link_delete(cmd);
+
+    if (ret == ESP_ERR_TIMEOUT) {
+        ESP_LOGW(TAG, "Write timeout 0x%02X reg 0x%02X — recovering bus", dev_addr, reg_addr);
+        if (xI2cBusRecovery() == ESP_OK) {
+            cmd = i2c_cmd_link_create();
+            i2c_master_start(cmd);
+            i2c_master_write_byte(cmd, (dev_addr << 1) | I2C_MASTER_WRITE, true);
+            i2c_master_write_byte(cmd, reg_addr, true);
+            i2c_master_write(cmd, data, len, true);
+            i2c_master_stop(cmd);
+            ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, I2C_TIMEOUT_MS / portTICK_PERIOD_MS);
+            i2c_cmd_link_delete(cmd);
+        }
+    }
 
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Write %d bytes to 0x%02X reg 0x%02X failed: %s",
@@ -144,6 +172,22 @@ esp_err_t xI2cReadByte(uint8_t dev_addr, uint8_t reg_addr, uint8_t *data) {
 
     esp_err_t ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, I2C_TIMEOUT_MS / portTICK_PERIOD_MS);
     i2c_cmd_link_delete(cmd);
+
+    if (ret == ESP_ERR_TIMEOUT) {
+        ESP_LOGW(TAG, "Read timeout 0x%02X reg 0x%02X — recovering bus", dev_addr, reg_addr);
+        if (xI2cBusRecovery() == ESP_OK) {
+            cmd = i2c_cmd_link_create();
+            i2c_master_start(cmd);
+            i2c_master_write_byte(cmd, (dev_addr << 1) | I2C_MASTER_WRITE, true);
+            i2c_master_write_byte(cmd, reg_addr, true);
+            i2c_master_start(cmd);
+            i2c_master_write_byte(cmd, (dev_addr << 1) | I2C_MASTER_READ, true);
+            i2c_master_read_byte(cmd, data, I2C_MASTER_NACK);
+            i2c_master_stop(cmd);
+            ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, I2C_TIMEOUT_MS / portTICK_PERIOD_MS);
+            i2c_cmd_link_delete(cmd);
+        }
+    }
 
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Read from 0x%02X reg 0x%02X failed: %s",
@@ -171,6 +215,25 @@ esp_err_t xI2cReadBytes(uint8_t dev_addr, uint8_t reg_addr, uint8_t *data, size_
 
     esp_err_t ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, I2C_TIMEOUT_MS / portTICK_PERIOD_MS);
     i2c_cmd_link_delete(cmd);
+
+    if (ret == ESP_ERR_TIMEOUT) {
+        ESP_LOGW(TAG, "Read timeout 0x%02X reg 0x%02X — recovering bus", dev_addr, reg_addr);
+        if (xI2cBusRecovery() == ESP_OK) {
+            cmd = i2c_cmd_link_create();
+            i2c_master_start(cmd);
+            i2c_master_write_byte(cmd, (dev_addr << 1) | I2C_MASTER_WRITE, true);
+            i2c_master_write_byte(cmd, reg_addr, true);
+            i2c_master_start(cmd);
+            i2c_master_write_byte(cmd, (dev_addr << 1) | I2C_MASTER_READ, true);
+            if (len > 1) {
+                i2c_master_read(cmd, data, len - 1, I2C_MASTER_ACK);
+            }
+            i2c_master_read_byte(cmd, data + len - 1, I2C_MASTER_NACK);
+            i2c_master_stop(cmd);
+            ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, I2C_TIMEOUT_MS / portTICK_PERIOD_MS);
+            i2c_cmd_link_delete(cmd);
+        }
+    }
 
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Read %d bytes from 0x%02X reg 0x%02X failed: %s",
