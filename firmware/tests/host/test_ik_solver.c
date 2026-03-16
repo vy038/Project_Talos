@@ -115,8 +115,8 @@ TEST(ik_straight_ahead) {
     ASSERT_EQ(err, ESP_OK);
     ASSERT_TRUE(sol.valid);
 
-    /* Base should be ~0 degrees (atan2(0,90) = 0, clamped to [0,180]) */
-    ASSERT_NEAR(sol.base_rotation, 0.0, 1.0);
+    /* Base should be BASE_ROTATION_MIN (atan2(0,90) = 0, clamped to [50,130]) */
+    ASSERT_NEAR(sol.base_rotation, 50.0, 1.0);
 }
 
 TEST(ik_solve_unreachable_returns_error) {
