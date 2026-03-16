@@ -37,12 +37,16 @@
 /* Joint limits (degrees)                                                      */
 /* -------------------------------------------------------------------------- */
 
-#define BASE_ROTATION_MIN       0.0f
-#define BASE_ROTATION_MAX       180.0f
-#define SHOULDER_MIN            0.0f
-#define SHOULDER_MAX            180.0f
-#define ELBOW_MIN               0.0f
-#define ELBOW_MAX               180.0f
+#define BASE_ROTATION_MIN       50.0f
+#define BASE_ROTATION_MAX       130.0f
+#define SHOULDER_MIN            75.0f
+#define SHOULDER_MAX            150.0f
+#define ELBOW_MIN               55.0f
+#define ELBOW_MAX               125.0f
+#define WRIST_MIN               70.0f
+#define WRIST_MAX               110.0f
+#define GRIPPER_MIN             100.0f
+#define GRIPPER_MAX             140.0f
 
 /* -------------------------------------------------------------------------- */
 /* Workspace limits                                                            */
