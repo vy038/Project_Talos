@@ -40,7 +40,19 @@
 static esp_err_t set_arm_ch(uint8_t channel, uint8_t angle) {
     esp_err_t ret = xPCA9685SetAngle(I2C_MASTER_NUM, PCA9685_BODY_ADDR, channel, angle);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to set ch%d to %d: %s", channel, angle, esp_err_to_name(ret));
+        /* Bus recovery already happened inside i2c.c on timeout. If the device
+         * was power-cycled and just reconnected, it needs a fresh PCA9685 init
+         * before it will ACK commands. Re-init and retry once. */
+        ESP_LOGW(TAG, "ch%d failed (%s) — reiniting PCA9685 and retrying",
+                 channel, esp_err_to_name(ret));
+        ret = xPCA9685Init(I2C_MASTER_NUM, PCA9685_BODY_ADDR, SERVO_PWM_FREQ_HZ);
+        if (ret == ESP_OK) {
+            ret = xPCA9685SetAngle(I2C_MASTER_NUM, PCA9685_BODY_ADDR, channel, angle);
+        }
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to set ch%d to %d after recovery: %s",
+                     channel, angle, esp_err_to_name(ret));
+        }
     }
     return ret;
 }
@@ -107,10 +119,10 @@ void test_arm(void) {
     xIKSolverInit();
 
     /* park all arm servos at neutral first */
-    set_arm_ch(ARM_BASE_CH, NEUTRAL_DEG);
-    set_arm_ch(ARM_SHOULDER_CH, NEUTRAL_DEG);
-    set_arm_ch(ARM_ELBOW_CH, NEUTRAL_DEG);
-    set_arm_ch(ARM_GRIPPER_CH, NEUTRAL_DEG);
+    // set_arm_ch(ARM_BASE_CH, NEUTRAL_DEG);
+    // set_arm_ch(ARM_SHOULDER_CH, NEUTRAL_DEG);
+    // set_arm_ch(ARM_ELBOW_CH, NEUTRAL_DEG);
+    // set_arm_ch(ARM_GRIPPER_CH, NEUTRAL_DEG);
     printf("All joints at %d deg (neutral). Waiting 5s...\n", NEUTRAL_DEG);
     vTaskDelay(pdMS_TO_TICKS(5000));
 
@@ -126,22 +138,22 @@ void test_arm(void) {
     // sweep_joint("ELBOW", ARM_ELBOW_CH,
     //             0, 180, NEUTRAL_DEG, NEUTRAL_DEG, NEUTRAL_DEG, 2);
 
-    set_arm_ch(ARM_BASE_CH, 90);
-    set_arm_ch(ARM_SHOULDER_CH, 90);
-    set_arm_ch(ARM_ELBOW_CH, 90);
-    set_arm_ch(ARM_GRIPPER_CH, 90);
+    set_arm_ch(ARM_BASE_CH, 90); // (50 - 130)
+    set_arm_ch(ARM_SHOULDER_CH, 90); // (75 - 150)
+    set_arm_ch(ARM_ELBOW_CH, 90); // (55 - 125)
+    set_arm_ch(ARM_GRIPPER_CH, 90); // (100 - 140)
 
-    /* quick gripper test: open -> close -> neutral */
-    printf("\n--- Gripper: 0 -> 180 -> 90 ---\n");
-    for (int angle = 0; angle <= 180; angle += SWEEP_STEP_DEG) {
-        set_arm_ch(ARM_GRIPPER_CH, (uint8_t)angle);
-        vTaskDelay(pdMS_TO_TICKS(SWEEP_DELAY_MS));
-    }
-    vTaskDelay(pdMS_TO_TICKS(500));
-    for (int angle = 180; angle >= 90; angle -= SWEEP_STEP_DEG) {
-        set_arm_ch(ARM_GRIPPER_CH, (uint8_t)angle);
-        vTaskDelay(pdMS_TO_TICKS(SWEEP_DELAY_MS));
-    }
+    // /* quick gripper test: open -> close -> neutral */
+    // printf("\n--- Gripper: 0 -> 180 -> 90 ---\n");
+    // for (int angle = 0; angle <= 180; angle += SWEEP_STEP_DEG) {
+    //     set_arm_ch(ARM_GRIPPER_CH, (uint8_t)angle);
+    //     vTaskDelay(pdMS_TO_TICKS(SWEEP_DELAY_MS));
+    // }
+    // vTaskDelay(pdMS_TO_TICKS(500));
+    // for (int angle = 180; angle >= 90; angle -= SWEEP_STEP_DEG) {
+    //     set_arm_ch(ARM_GRIPPER_CH, (uint8_t)angle);
+    //     vTaskDelay(pdMS_TO_TICKS(SWEEP_DELAY_MS));
+    // }
 
     printf("\n=== Arm test complete ===\n");
     printf("\n");
