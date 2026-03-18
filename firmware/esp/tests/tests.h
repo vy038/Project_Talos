@@ -58,6 +58,9 @@ static inline void run_test(void) {
     printf("  Project Talos - Hardware Test Runner\n");
     printf("========================================\n\n");
 
+    test_i2c_scan();
+    printf("\n");
+
     switch (TEST_SELECT) {
         case TEST_I2C_SCAN:
             printf("[TEST] I2C Bus Scan\n");
