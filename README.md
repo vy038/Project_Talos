@@ -4,7 +4,7 @@ Scorpion-style hexapod robot with a 6-DOF arm and computer vision. Wanted to bui
 
 **Hardware:**
 - 13 SG90 servos for legs and part of arm (tripod gait)
-- 3 MG90S servos for the high stress parts of arm
+- 3 MG90S servos for the high-stress parts of arm
 - 2x PCA9685 I2C servo controller (want to reduce to 1)
 - MPU6050 IMU, VL53L0X distance sensor, OV2640 camera
 - ACS712 current sensing
@@ -15,7 +15,7 @@ Scorpion-style hexapod robot with a 6-DOF arm and computer vision. Wanted to bui
 - Hardware I2C (burst mode for real-time walking)
 - UART for ESP32-ESP32 comms
 - Inverse kinematics for arm
-- Baaic color detection for vision
+- Basic color detection for vision
 
 ## Simulator
 
@@ -73,4 +73,4 @@ Project_Talos/
 - 10Hz vision processing
 - Autonomous cube manipulation
 
-Timeline: Dec 2024 - Apr 2025
+Timeline: Dec 2025 - Apr 2026
