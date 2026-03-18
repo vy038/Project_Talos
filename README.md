@@ -17,6 +17,22 @@ Scorpion-style hexapod robot with a 6-DOF arm and computer vision. Wanted to bui
 - Inverse kinematics for arm
 - Baaic color detection for vision
 
+## Simulator
+
+Lightsim is a lightweight browser-based simulator that compiles the real firmware C code natively on Linux using HAL stubs, then visualizes the robot via WebSocket.
+
+```bash
+cd sim/lightsim
+./scripts/build.sh   # build C sim + install npm deps
+./scripts/run.sh     # launch sim + server on :3000
+```
+
+Then open http://localhost:3000
+
+Three view modes: **Debug** (servo/IMU/I2C dashboard), **2D** (top-down canvas), **3D** (Three.js with orbit camera). Includes D-pad/keyboard control, gait selector (tripod/wave/ripple), manual arm sliders, IK cursor mode, and a physics ball for interaction testing.
+
+The simulator compiles unmodified firmware files (`main.c`, gait, balance, arm, IK) and stubs out the 6 hardware drivers (I2C, servo, MPU6050, ADC, UART, power monitor).
+
 ## Current status
 
 Testing the arm and making walking gait better.
@@ -42,7 +58,12 @@ Project_Talos/
 ├── components/
 │   ├── drivers/           # peripheral drivers
 │   └── ...
-└── hardware/              # wiring, CAD
+├── hardware/              # wiring, CAD
+└── sim/lightsim/          # browser simulator (see Simulator section)
+    ├── sim/               # C simulator + HAL stubs
+    ├── server/            # Node.js bridge (Express + ws)
+    ├── frontend/          # vanilla JS, Three.js
+    └── scripts/           # build.sh, run.sh
 ```
 
 ## Goals
