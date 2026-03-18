@@ -22,6 +22,9 @@ const SimState = {
     }
 };
 
+// Global WS send function — used by viewer3d.js to send camera detection data
+window.SimWS = { send: function() {} };
+
 (function connectWebSocket() {
     const wsUrl = `ws://${window.location.host}`;
     const statusEl = document.getElementById('ws-status');
@@ -37,6 +40,12 @@ const SimState = {
             statusEl.className = 'connected';
             const dot = document.getElementById('ws-dot');
             if (dot) dot.className = 'status-dot connected';
+            // Expose send capability
+            window.SimWS.send = function(obj) {
+                if (ws && ws.readyState === 1) {
+                    ws.send(JSON.stringify(obj));
+                }
+            };
         };
 
         ws.onmessage = (event) => {

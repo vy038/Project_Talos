@@ -17,8 +17,10 @@ const http = require('http');
 const readline = require('readline');
 
 const PORT = process.env.PORT || 3000;
+const CAM_WS_PORT = 8765;
 const SIM_PATH = path.join(__dirname, '..', 'build', 'talos_sim');
 const FRONTEND_PATH = path.join(__dirname, '..', 'frontend');
+const ESPCAM_TESTS_PATH = path.join(__dirname, '..', '..', '..', 'firmware', 'espcam', 'tests');
 
 // ============================================================================
 // Express app + HTTP server
@@ -27,6 +29,7 @@ const FRONTEND_PATH = path.join(__dirname, '..', 'frontend');
 const app = express();
 app.use(express.json());
 app.use(express.static(FRONTEND_PATH));
+app.use('/espcam', express.static(ESPCAM_TESTS_PATH));
 
 const server = http.createServer(app);
 
@@ -37,6 +40,17 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 let latestState = null;
 
+// Camera WebSocket server (port 8765) — feeds test_red_ball.html
+const camWss = new WebSocketServer({ port: CAM_WS_PORT });
+let camFrameCount = 0;
+
+function broadcastCamera(data) {
+    const json = JSON.stringify(data);
+    for (const client of camWss.clients) {
+        if (client.readyState === 1) client.send(json);
+    }
+}
+
 wss.on('connection', (ws) => {
     console.log(`[WS] Client connected (total: ${wss.clients.size})`);
 
@@ -44,6 +58,20 @@ wss.on('connection', (ws) => {
     if (latestState) {
         ws.send(latestState);
     }
+
+    // Handle messages from browser (camera detection data, etc.)
+    ws.on('message', (raw) => {
+        try {
+            const msg = JSON.parse(raw);
+            if (msg.type === 'camera_detection') {
+                // Forward simulated camera detection to camera WS (port 8765)
+                camFrameCount++;
+                msg.frame = camFrameCount;
+                delete msg.type;
+                broadcastCamera(msg);
+            }
+        } catch (e) { /* ignore malformed */ }
+    });
 
     ws.on('close', () => {
         console.log(`[WS] Client disconnected (total: ${wss.clients.size})`);
@@ -234,6 +262,7 @@ server.listen(PORT, () => {
     console.log(`\n=== Lightsim Server ===`);
     console.log(`Frontend: http://localhost:${PORT}`);
     console.log(`WebSocket: ws://localhost:${PORT}`);
+    console.log(`Camera WS: ws://localhost:${CAM_WS_PORT}`);
     console.log(`API: http://localhost:${PORT}/api/status\n`);
     startSimulator();
 });

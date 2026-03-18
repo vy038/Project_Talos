@@ -124,3 +124,33 @@ This section documents the transformation of Lightsim during this session, from 
 - **IK Cursor Mode**: Draggable 3D gizmo (cyan sphere + RGB axis lines) at the gripper tip. When dragged, a JS IK solver (port of firmware `ik_solver.c` with sim dimensions: L1=90, L2=75) computes joint angles. Shows workspace sphere wireframe, reachability color (green/red), relative position readout, and auto-updates arm sliders.
 - **Server Endpoints**: Added `/api/command` and `/api/test` endpoints to the bridge server.
 - **Controls Panel**: Widened from 210px to 280px for better slider/readout visibility.
+
+### 7. Session 3 - ESP-CAM Integration & Camera Simulation
+
+#### Camera Component
+- **3D Model**: ESP32-CAM module rendered as a dark box (10×8×6) with a cylindrical lens and red LED indicator, attached to the **front-bottom** of the robot body at position `(0, -22, 38)` in body-local coords — approximately 4cm below the base chassis, at the front (opposite side from the arm mount).
+- **FOV Frustum**: Wireframe pyramid showing the 60° horizontal / ~47° vertical field of view, with semi-transparent green fill. Frustum extends 120 sim-units forward from the camera.
+- **Physics Collider**: Camera box has a kinematic sphere collider (radius 6) so the ball bounces off it.
+
+#### Simulated Vision Pipeline
+- **Pinhole Projection**: Each frame (~20 FPS), the ball's world position is transformed into camera-local space. If within the FOV, pixel coordinates `(cx, cy)` are computed using the pinhole model with `FOCAL_PX = (320/2) / tan(30°) ≈ 277px`.
+- **Detection Data**: Generates the full `ball_detection_t`-equivalent structure: centroid, blob area, pixel radius, normalized offsets, bearing angle, and distance estimate in mm.
+- **UART Packet**: Builds the 11-byte detection packet (matching `uart_protocol.h` format: `[0xAA][0x55][0x01][det][x_hi][x_lo][y_hi][y_lo][r_hi][r_lo][chk]`) with correct XOR checksum.
+- **Scale Mapping**: `SIM_MM_PER_PX = 2.5` — ball radius of 8 sim-units = 20mm real, matching the espcam firmware's `BALL_REAL_RADIUS_MM = 20.0f`.
+
+#### Camera WebSocket (port 8765)
+- **Architecture**: Browser → main WS (port 3000) → server → camera WS (port 8765) → test_red_ball.html iframe.
+- **Data Flow**: `viewer3d.js` sends `{type: "camera_detection", ...}` via main WS. Server strips the type and broadcasts to all camera WS clients on port 8765.
+- **test_red_ball.html**: Served at `/espcam/test_red_ball.html` from `firmware/espcam/tests/`. Embedded in the debug panel as an iframe. Displays camera canvas, detection stats, position, distance, and UART packet visualization.
+
+#### Debug Panel Merge
+- **Before**: 6 panels in 3×2 grid — Leg Servos, Arm Servos, IMU, I2C Monitor, All Body Servos, Serial Terminal.
+- **After**: 5 panels in 3×2 grid — **All Servos** (merged leg + arm + raw ch0-15 in one scrollable panel), **Camera View** (test_red_ball.html iframe), IMU, I2C Monitor, **Serial Terminal** (spans 2 columns).
+
+#### Ball Physics Changes
+- **Restitution**: Reduced from 0.6 to 0.15 (much less bouncy).
+- **Friction**: Increased from 0.5 to 0.6.
+- **Linear Damping**: Increased from 0.02 to 0.04.
+- **Radius**: 8 sim-units (= 20mm at sim scale), unchanged visually.
+- **Positionable**: Added X/Y/Z sliders and "Set Position" button in Controls panel. Live coordinate readout shows ball position.
+- **Draggable**: Unchanged — click-drag to throw, shift+drag for height, click-to-place mode.

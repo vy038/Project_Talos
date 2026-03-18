@@ -193,6 +193,202 @@ gripperGroup.add(gripR);
 
 
 // ============================================================================
+// ESP-CAM Camera Module (mounted front-bottom of body)
+// ============================================================================
+
+// Camera constants matching espcam firmware
+const CAM_W = 320, CAM_H = 240;
+const CAM_FOV_DEG = 60.0;
+const CAM_HFOV_RAD = CAM_FOV_DEG * Math.PI / 180;
+const CAM_VFOV_RAD = 2 * Math.atan(Math.tan(CAM_HFOV_RAD / 2) * (CAM_H / CAM_W));
+const CAM_FOCAL_PX = (CAM_W / 2) / Math.tan(CAM_HFOV_RAD / 2);
+const SIM_MM_PER_PX = 2.5; // scale: 8px ball radius = 20mm real
+const BALL_REAL_RADIUS_MM = 20.0;
+
+// Camera group — attached to body, front-bottom (-Z face, opposite arm at +Z)
+// ~4cm below base (16px at 2.5mm/px scale), at front face
+const camGroup = new THREE.Group();
+camGroup.position.set(0, -22, -38);
+camGroup.rotation.y = Math.PI; // face outward (local +Z = world -Z = robot front)
+body.add(camGroup);
+
+// Camera body mesh (small dark box representing ESP32-CAM)
+const camBoxMat = new THREE.MeshPhongMaterial({ color: 0x222222, emissive: 0x050505 });
+const camBoxMesh = new THREE.Mesh(new THREE.BoxGeometry(10, 8, 6), camBoxMat);
+camGroup.add(camBoxMesh);
+
+// Lens (small cylinder on front face)
+const lensMat = new THREE.MeshPhongMaterial({ color: 0x111111, emissive: 0x001133 });
+const lensMesh = new THREE.Mesh(new THREE.CylinderGeometry(2.5, 2.5, 2, 8), lensMat);
+lensMesh.rotation.x = Math.PI / 2;
+lensMesh.position.z = 4;
+camGroup.add(lensMesh);
+
+// LED indicator (small red sphere)
+const ledMat = new THREE.MeshPhongMaterial({ color: 0xff0000, emissive: 0x330000 });
+const ledMesh = new THREE.Mesh(new THREE.SphereGeometry(0.8, 6, 6), ledMat);
+ledMesh.position.set(4, 3, 3);
+camGroup.add(ledMesh);
+
+// FOV frustum wireframe — shows camera field of view
+const frustumLen = 120;
+const frustumHalfW = Math.tan(CAM_HFOV_RAD / 2) * frustumLen;
+const frustumHalfH = Math.tan(CAM_VFOV_RAD / 2) * frustumLen;
+
+const frustumVerts = new Float32Array([
+    // 4 lines from apex to corners
+    0, 0, 0,   frustumHalfW,  frustumHalfH, frustumLen,
+    0, 0, 0,  -frustumHalfW,  frustumHalfH, frustumLen,
+    0, 0, 0,   frustumHalfW, -frustumHalfH, frustumLen,
+    0, 0, 0,  -frustumHalfW, -frustumHalfH, frustumLen,
+    // Rectangle at far end
+     frustumHalfW,  frustumHalfH, frustumLen,  -frustumHalfW,  frustumHalfH, frustumLen,
+    -frustumHalfW,  frustumHalfH, frustumLen,  -frustumHalfW, -frustumHalfH, frustumLen,
+    -frustumHalfW, -frustumHalfH, frustumLen,   frustumHalfW, -frustumHalfH, frustumLen,
+     frustumHalfW, -frustumHalfH, frustumLen,   frustumHalfW,  frustumHalfH, frustumLen,
+]);
+const frustumGeom = new THREE.BufferGeometry();
+frustumGeom.setAttribute('position', new THREE.BufferAttribute(frustumVerts, 3));
+const frustumLines = new THREE.LineSegments(frustumGeom,
+    new THREE.LineBasicMaterial({ color: 0x44ff44, transparent: true, opacity: 0.3 })
+);
+camGroup.add(frustumLines);
+
+// Semi-transparent FOV fill (4-sided pyramid)
+const fillVerts = new Float32Array([
+    // Triangle fan from apex to each edge of far rectangle
+    0,0,0,  frustumHalfW, frustumHalfH, frustumLen,  -frustumHalfW, frustumHalfH, frustumLen,
+    0,0,0, -frustumHalfW, frustumHalfH, frustumLen,  -frustumHalfW,-frustumHalfH, frustumLen,
+    0,0,0, -frustumHalfW,-frustumHalfH, frustumLen,   frustumHalfW,-frustumHalfH, frustumLen,
+    0,0,0,  frustumHalfW,-frustumHalfH, frustumLen,   frustumHalfW, frustumHalfH, frustumLen,
+]);
+const fillGeom = new THREE.BufferGeometry();
+fillGeom.setAttribute('position', new THREE.BufferAttribute(fillVerts, 3));
+const fillMat = new THREE.MeshBasicMaterial({
+    color: 0x44ff44, transparent: true, opacity: 0.04,
+    side: THREE.DoubleSide, depthWrite: false,
+});
+camGroup.add(new THREE.Mesh(fillGeom, fillMat));
+
+// ============================================================================
+// Simulated Camera Detection (pinhole projection of ball into camera view)
+// ============================================================================
+
+let camDetectionFrame = 0;
+
+function simulateCameraDetection(ballPos) {
+    // Get camera world position and orientation
+    const camWorldPos = new THREE.Vector3();
+    const camWorldQuat = new THREE.Quaternion();
+    camGroup.getWorldPosition(camWorldPos);
+    camGroup.getWorldQuaternion(camWorldQuat);
+
+    // Ball position relative to camera
+    const ballWorld = new THREE.Vector3(ballPos.x, ballPos.y, ballPos.z);
+    const ballRel = ballWorld.clone().sub(camWorldPos);
+
+    // Transform to camera local space (camera looks along +Z)
+    const invQuat = camWorldQuat.clone().invert();
+    const ballLocal = ballRel.clone().applyQuaternion(invQuat);
+
+    // Ball behind camera
+    if (ballLocal.z <= 0) return null;
+
+    // Check horizontal and vertical FOV
+    const angleH = Math.atan2(ballLocal.x, ballLocal.z);
+    const angleV = Math.atan2(-ballLocal.y, ballLocal.z);
+    if (Math.abs(angleH) > CAM_HFOV_RAD / 2 || Math.abs(angleV) > CAM_VFOV_RAD / 2) return null;
+
+    // Pinhole projection to camera image pixels
+    const cx = CAM_W / 2 + (ballLocal.x / ballLocal.z) * CAM_FOCAL_PX;
+    const cy = CAM_H / 2 - (ballLocal.y / ballLocal.z) * CAM_FOCAL_PX;
+
+    // Distance from camera to ball (sim units)
+    const distSim = ballRel.length();
+    const distMm = distSim * SIM_MM_PER_PX;
+
+    // Pixel radius on camera image
+    const ballSimRadius = ballRadius; // from physics ball
+    const pixelRad = (ballSimRadius / ballLocal.z) * CAM_FOCAL_PX;
+
+    // Blob area (circular approximation)
+    const blobPixels = Math.round(Math.PI * pixelRad * pixelRad);
+
+    // Offsets normalized to [-1, 1]
+    const ox = (cx - CAM_W / 2) / (CAM_W / 2);
+    const oy = (cy - CAM_H / 2) / (CAM_H / 2);
+
+    // Bearing angle (degrees)
+    const brgDeg = angleH * 180 / Math.PI;
+
+    // Build UART packet (11 bytes)
+    const det = 1;
+    const pktX = Math.max(0, Math.min(65535, Math.round(cx)));
+    const pktY = Math.max(0, Math.min(65535, Math.round(cy)));
+    const pktR = Math.max(0, Math.min(65535, Math.round(distMm)));
+
+    const pktBytes = [
+        0xAA, 0x55, 0x01, det,
+        (pktX >> 8) & 0xFF, pktX & 0xFF,
+        (pktY >> 8) & 0xFF, pktY & 0xFF,
+        (pktR >> 8) & 0xFF, pktR & 0xFF,
+        0 // checksum placeholder
+    ];
+    let chk = 0;
+    for (let i = 2; i < 10; i++) chk ^= pktBytes[i];
+    pktBytes[10] = chk;
+
+    const pktHex = pktBytes.map(b => b.toString(16).toUpperCase().padStart(2, '0')).join('');
+
+    camDetectionFrame++;
+    return {
+        type: 'camera_detection',
+        frame: camDetectionFrame,
+        det: 1,
+        cx: Math.round(cx),
+        cy: Math.round(cy),
+        blob: blobPixels,
+        px_r: pixelRad,
+        ox: parseFloat(ox.toFixed(3)),
+        oy: parseFloat(oy.toFixed(3)),
+        brg_deg: parseFloat(brgDeg.toFixed(2)),
+        dist_mm: parseFloat(distMm.toFixed(1)),
+        tof: 0,
+        pkt: pktHex,
+        pkt_decoded: {
+            x: pktX,
+            y: pktY,
+            r: pktR,
+            checksum: '0x' + chk.toString(16).toUpperCase().padStart(2, '0'),
+        },
+    };
+}
+
+// Send "not detected" frame
+function sendNoDetection() {
+    camDetectionFrame++;
+    const pktBytes = [0xAA, 0x55, 0x01, 0, 0, 0, 0, 0, 0, 0, 0];
+    let chk = 0;
+    for (let i = 2; i < 10; i++) chk ^= pktBytes[i];
+    pktBytes[10] = chk;
+    const pktHex = pktBytes.map(b => b.toString(16).toUpperCase().padStart(2, '0')).join('');
+
+    return {
+        type: 'camera_detection',
+        frame: camDetectionFrame,
+        det: 0,
+        cx: 0, cy: 0, blob: 0, px_r: 0,
+        ox: 0, oy: 0, brg_deg: 0,
+        dist_mm: 0, tof: 0,
+        pkt: pktHex,
+        pkt_decoded: { x: 0, y: 0, r: 0, checksum: '0x' + chk.toString(16).toUpperCase().padStart(2, '0') },
+    };
+}
+
+// Throttle camera detection to ~20 FPS (every 3 render frames at 60fps)
+let camTickCounter = 0;
+
+// ============================================================================
 // IK Cursor Gizmo
 // ============================================================================
 
@@ -670,10 +866,16 @@ const ballBody = physicsWorld.addBody(new RigidBody({
     mass: 0.5,
     shape: new SphereShape(ballRadius),
     position: new Vec3(0, 150, -50),
-    restitution: 0.6,
-    friction: 0.5,
-    linearDamping: 0.02,
+    restitution: 0.15,   // low bounce — not a bouncy ball
+    friction: 0.6,
+    linearDamping: 0.04,
 }));
+
+// Ghost ball: shown on hover when ball-place-mode is active
+const ghostMat = new THREE.MeshBasicMaterial({ color: 0xe94560, wireframe: true, transparent: true, opacity: 0.5 });
+const ghostMesh = new THREE.Mesh(new THREE.SphereGeometry(ballRadius, 12, 12), ghostMat);
+ghostMesh.visible = false;
+scene.add(ghostMesh);
 
 // Robot collider bodies (kinematic — updated from Three.js world positions each frame)
 const robotColliders = [];
@@ -711,6 +913,9 @@ createRobotCollider(forearmMesh);
 createRobotCollider(gripL);
 createRobotCollider(gripR);
 
+// Camera collider
+createRobotCollider(camBoxMesh, 6);
+
 // Sync kinematic colliders to their Three.js mesh world positions
 function syncRobotColliders() {
     const wp = new THREE.Vector3();
@@ -722,6 +927,7 @@ function syncRobotColliders() {
 
 // Ball placement mode
 window.BallPlaceMode = false;
+window.HideBallGhost = () => { ghostMesh.visible = false; };
 
 window.PhysicsBall = {
     get x() { return ballBody.position.x; },
@@ -755,6 +961,13 @@ window.PhysicsBall = {
     },
     reset: function () {
         ballBody.position.set(0, ballRadius, 0);
+        ballBody.velocity.set(0, 0, 0);
+        ballBody.angularVelocity = new Vec3();
+        this.active = true;
+        this.dragging = false;
+    },
+    setPosition: function (x, y, z) {
+        ballBody.position.set(x, y, z);
         ballBody.velocity.set(0, 0, 0);
         ballBody.angularVelocity = new Vec3();
         this.active = true;
@@ -818,6 +1031,7 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
         const groundHits = raycaster.intersectObject(groundPlane);
         if (groundHits.length > 0) {
             const pt = groundHits[0].point;
+            ghostMesh.visible = false;
             window.PhysicsBall.drop(pt.x, pt.z);
             e.preventDefault();
             return;
@@ -873,9 +1087,24 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
 });
 
 renderer.domElement.addEventListener('pointermove', (e) => {
-    if (!activeDrag) return;
-
     const rect = renderer.domElement.getBoundingClientRect();
+
+    // Ghost ball placement preview (runs even when not dragging)
+    if (window.BallPlaceMode && !activeDrag) {
+        const mx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        const my = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(new THREE.Vector2(mx, my), camera);
+        const groundHits = raycaster.intersectObject(groundPlane);
+        if (groundHits.length > 0) {
+            const pt = groundHits[0].point;
+            ghostMesh.position.set(pt.x, ballRadius, pt.z);
+            ghostMesh.visible = true;
+        }
+        return;
+    }
+    ghostMesh.visible = false;
+
+    if (!activeDrag) return;
     mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
     raycaster.setFromCamera(mouse, camera);
@@ -1009,6 +1238,33 @@ function animate() {
         updatePhysics();
         controls.update();
         renderer.render(scene, camera);
+
+        // Export ball position for UI readout
+        window.BallPosition = {
+            x: ballBody.position.x,
+            y: ballBody.position.y,
+            z: ballBody.position.z,
+        };
+
+        // Simulated camera detection (~20 FPS = every 3 frames at 60fps)
+        camTickCounter++;
+        if (camTickCounter >= 3 && window.PhysicsBall.active) {
+            camTickCounter = 0;
+            const det = simulateCameraDetection(ballBody.position);
+            if (det) {
+                window.SimWS.send(det);
+                window.LatestCamDetection = det;
+            } else {
+                const noDet = sendNoDetection();
+                window.SimWS.send(noDet);
+                window.LatestCamDetection = noDet;
+            }
+        } else if (!window.PhysicsBall.active && camTickCounter >= 3) {
+            camTickCounter = 0;
+            const noDet = sendNoDetection();
+            window.SimWS.send(noDet);
+            window.LatestCamDetection = noDet;
+        }
     }
 }
 animate();

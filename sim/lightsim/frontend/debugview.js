@@ -16,15 +16,11 @@
     }
 
     container.innerHTML = `
-        <div class="debug-panel" style="grid-column: 1/2; grid-row: 1/2;">
-            <h3>Leg Servos</h3>
-            <div id="leg-servos"></div>
+        <div class="debug-panel" style="grid-column: 1/2; grid-row: 1/2; overflow-y:auto;">
+            <h3>All Servos</h3>
+            <div id="all-servos-merged"></div>
         </div>
         <div class="debug-panel" style="grid-column: 2/3; grid-row: 1/2;">
-            <h3>Arm Servos</h3>
-            <div id="arm-servos"></div>
-        </div>
-        <div class="debug-panel" style="grid-column: 3/3; grid-row: 1/2;">
             <h3>IMU / Sensors</h3>
             <div id="imu-data"></div>
         </div>
@@ -33,10 +29,6 @@
             <div id="i2c-monitor" class="i2c-log"><span class="i2c-placeholder">Waiting for I2C traffic...</span></div>
         </div>
         <div class="debug-panel" style="grid-column: 2/3; grid-row: 2/3;">
-            <h3>All Body Servos (ch 0-15)</h3>
-            <div id="all-servos"></div>
-        </div>
-        <div class="debug-panel" style="grid-column: 3/4; grid-row: 2/3;">
             <h3>Serial Terminal</h3>
             <div id="serial-terminal" class="serial-log"></div>
         </div>
@@ -60,6 +52,13 @@
             <span class="servo-bar-value">90</span>
         </div>`;
     }
+
+    // Build merged servo panel: leg + arm + raw channels all in one
+    const mergedEl = document.getElementById('all-servos-merged');
+    mergedEl.innerHTML =
+        `<div class="servo-section-label">Legs</div><div id="leg-servos"></div>` +
+        `<div class="servo-section-label" style="margin-top:4px;">Arm</div><div id="arm-servos"></div>` +
+        `<div class="servo-section-label" style="margin-top:4px;">Raw Channels (0-15)</div><div id="all-servos"></div>`;
 
     const legEl = document.getElementById('leg-servos');
     legEl.innerHTML = legNames.map(n => createServoBar(n)).join('');

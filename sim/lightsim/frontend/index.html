@@ -45,6 +45,7 @@
                 <button class="ptab active" data-panel="debug">DEBUG</button>
                 <button class="ptab active" data-panel="view3d">3D</button>
                 <button class="ptab" data-panel="view2d">2D</button>
+                <button class="ptab" data-panel="viewcam">CAM</button>
             </div>
             <div class="topbar-right">
                 <div class="status-group">
@@ -71,6 +72,9 @@
                         <div id="debug-main-content"></div>
                     </div>
                 </div>
+
+                <!-- Row resize handle between debug and controls -->
+                <div id="row-resize-handle" class="resize-handle resize-handle-row"></div>
 
                 <!-- CONTROLS PANEL -->
                 <div class="pane active" id="pane-controls">
@@ -144,6 +148,25 @@
                                 <input type="checkbox" id="ball-place-mode">
                                 <span>Click to Place</span>
                             </label>
+                            <div id="ball-pos-readout" class="arm-readout" style="margin:3px 0;">pos: —</div>
+                            <div class="slider-group">
+                                <div class="slider-row">
+                                    <label>X</label>
+                                    <input type="range" min="-200" max="200" value="0" id="ball-x-slider">
+                                    <span id="ball-x-val" class="slider-val">0</span>
+                                </div>
+                                <div class="slider-row">
+                                    <label>Y</label>
+                                    <input type="range" min="0" max="200" value="8" id="ball-y-slider">
+                                    <span id="ball-y-val" class="slider-val">8</span>
+                                </div>
+                                <div class="slider-row">
+                                    <label>Z</label>
+                                    <input type="range" min="-200" max="200" value="0" id="ball-z-slider">
+                                    <span id="ball-z-val" class="slider-val">0</span>
+                                </div>
+                            </div>
+                            <button class="btn btn-full" id="btn-ball-setpos" style="margin-top:4px">Set Position</button>
                             <p class="hint">Click-drag to throw. Shift+drag = height.</p>
                         </div>
 
@@ -189,6 +212,9 @@
 
             </div><!-- #left-column -->
 
+            <!-- Column resize handle -->
+            <div id="col-resize-handle" class="resize-handle resize-handle-col"></div>
+
             <!-- RIGHT COLUMN: 3D / 2D View -->
             <div id="right-column">
 
@@ -203,6 +229,14 @@
                     <div class="pane-header">2D TOP-DOWN</div>
                     <div class="pane-body" style="padding:0">
                         <canvas id="canvas-2d"></canvas>
+                    </div>
+                </div>
+
+                <div class="pane" id="pane-view-cam">
+                    <div class="pane-header">ESP-CAM VIEW</div>
+                    <div class="pane-body" style="padding:0">
+                        <iframe id="cam-iframe" src="/espcam/test_red_ball.html"
+                            style="width:100%;height:100%;border:none;background:#111;display:block;"></iframe>
                     </div>
                 </div>
 
@@ -289,6 +323,7 @@
             debug:    'pane-debug',
             view3d:   'pane-view3d',
             view2d:   'pane-view2d',
+            viewcam:  'pane-view-cam',
         };
 
         document.querySelectorAll('.ptab').forEach(tab => {
@@ -454,7 +489,31 @@
         });
         document.getElementById('ball-place-mode').addEventListener('change', function() {
             window.BallPlaceMode = this.checked;
+            if (!this.checked && window.HideBallGhost) window.HideBallGhost();
         });
+
+        // Ball position sliders
+        ['ball-x-slider', 'ball-y-slider', 'ball-z-slider'].forEach(id => {
+            const axis = id.split('-')[1];
+            document.getElementById(id).addEventListener('input', function() {
+                document.getElementById('ball-' + axis + '-val').textContent = this.value;
+            });
+        });
+        document.getElementById('btn-ball-setpos').addEventListener('click', () => {
+            const x = +document.getElementById('ball-x-slider').value;
+            const y = +document.getElementById('ball-y-slider').value;
+            const z = +document.getElementById('ball-z-slider').value;
+            if (window.PhysicsBall) window.PhysicsBall.setPosition(x, y, z);
+        });
+
+        // Ball position readout
+        setInterval(() => {
+            const bp = window.BallPosition;
+            if (bp) {
+                const el = document.getElementById('ball-pos-readout');
+                if (el) el.textContent = `pos: X:${bp.x.toFixed(0)} Y:${bp.y.toFixed(0)} Z:${bp.z.toFixed(0)}`;
+            }
+        }, 100);
 
         // ── IK cursor toggle ────────────────────────────────────────────────
         document.getElementById('ik-mode-toggle').addEventListener('change', function() {
@@ -475,6 +534,52 @@
         document.getElementById('arm-override-toggle').addEventListener('change', function() {
             if (window.ArmControl) window.ArmControl.override = this.checked;
         });
+
+        // ── Resize handles ────────────────────────────────────────────────────
+        (function() {
+            // Column resize: drag to change left-column width
+            const colHandle = document.getElementById('col-resize-handle');
+            const leftCol   = document.getElementById('left-column');
+            let colDragging = false;
+
+            colHandle.addEventListener('pointerdown', (e) => {
+                colDragging = true;
+                colHandle.setPointerCapture(e.pointerId);
+                e.preventDefault();
+            });
+            colHandle.addEventListener('pointermove', (e) => {
+                if (!colDragging) return;
+                const ws = document.getElementById('workspace').getBoundingClientRect();
+                const newW = Math.max(240, Math.min(window.innerWidth - 300, e.clientX - ws.left));
+                leftCol.style.width = newW + 'px';
+                leftCol.style.minWidth = 'unset';
+                leftCol.style.maxWidth = 'unset';
+                window.dispatchEvent(new Event('resize'));
+            });
+            colHandle.addEventListener('pointerup', () => { colDragging = false; });
+
+            // Row resize: drag to change debug/controls split within left-column
+            const rowHandle  = document.getElementById('row-resize-handle');
+            const paneDebug  = document.getElementById('pane-debug');
+            const paneCtrl   = document.getElementById('pane-controls');
+            let rowDragging = false;
+
+            rowHandle.addEventListener('pointerdown', (e) => {
+                rowDragging = true;
+                rowHandle.setPointerCapture(e.pointerId);
+                e.preventDefault();
+            });
+            rowHandle.addEventListener('pointermove', (e) => {
+                if (!rowDragging) return;
+                const lc = leftCol.getBoundingClientRect();
+                const newH = Math.max(80, Math.min(lc.height - 80, e.clientY - lc.top));
+                paneDebug.style.flex = 'none';
+                paneDebug.style.height = newH + 'px';
+                paneCtrl.style.flex = '1';
+                paneCtrl.style.height = 'unset';
+            });
+            rowHandle.addEventListener('pointerup', () => { rowDragging = false; });
+        })();
 
         // Live readout
         setInterval(() => {

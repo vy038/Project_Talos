@@ -140,7 +140,8 @@ function detectSpherePlane(sphere, plane) {
     const penetration = sphere.shape.radius - dist;
     if (penetration > 0) {
         const point = sphere.position.sub(plane.shape.normal.scale(dist));
-        return new Contact(sphere, plane, plane.shape.normal, penetration, point);
+        // Normal must point from A(sphere) toward B(plane) per resolveContact convention
+        return new Contact(sphere, plane, plane.shape.normal.scale(-1), penetration, point);
     }
     return null;
 }
