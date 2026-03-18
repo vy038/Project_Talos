@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lightsim - Project Talos</title>
+    <link rel="stylesheet" href="style.css">
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js"
+            }
+        }
+    </script>
+</head>
+<body>
+
+    <!-- ── Splash Screen ─────────────────────────────────────────────── -->
+    <div id="splash-screen">
+        <div class="splash-inner">
+            <div class="splash-logo">LIGHTSIM</div>
+            <div class="splash-sub">Project Talos Hexapod Simulator</div>
+            <div class="splash-divider"></div>
+            <div class="splash-info">
+                <span>HAL Stub Runtime</span>
+                <span>WebSocket Bridge</span>
+                <span>Three.js Renderer</span>
+            </div>
+            <button id="btn-launch" class="splash-btn">Compile &amp; Launch</button>
+            <div id="splash-status" class="splash-status"></div>
+        </div>
+    </div>
+
+    <!-- ── Main App (hidden until launch) ─────────────────────────────── -->
+    <div id="app" class="hidden">
+
+        <!-- Top bar -->
+        <header id="topbar">
+            <div class="topbar-left">
+                <span class="brand">LIGHTSIM</span>
+                <span class="brand-sub">Talos</span>
+            </div>
+            <div id="panel-toggles">
+                <button class="ptab active" data-panel="controls">CTRL</button>
+                <button class="ptab active" data-panel="debug">DEBUG</button>
+                <button class="ptab active" data-panel="view3d">3D</button>
+                <button class="ptab" data-panel="view2d">2D</button>
+            </div>
+            <div class="topbar-right">
+                <div class="status-group">
+                    <span class="status-dot" id="ws-dot"></span>
+                    <span id="ws-status" class="disconnected">OFFLINE</span>
+                </div>
+                <span class="sep">|</span>
+                <span id="fps-counter" class="mono-dim">-- Hz</span>
+                <span class="sep">|</span>
+                <span id="timescale-label" class="mono-dim">1.0x</span>
+            </div>
+        </header>
+
+        <!-- Workspace -->
+        <div id="workspace">
+
+            <!-- LEFT COLUMN: Debug (top) + Controls (bottom) -->
+            <div id="left-column">
+
+                <!-- DEBUG PANEL -->
+                <div class="pane active" id="pane-debug">
+                    <div class="pane-header">DEBUG TELEMETRY</div>
+                    <div class="pane-body" style="padding:0">
+                        <div id="debug-main-content"></div>
+                    </div>
+                </div>
+
+                <!-- CONTROLS PANEL -->
+                <div class="pane active" id="pane-controls">
+                    <div class="pane-header">CONTROL PANEL</div>
+                    <div class="pane-body">
+
+                        <div class="ctrl-section">
+                            <div class="ctrl-title">SYSTEM</div>
+                            <div class="btn-row">
+                                <button id="btn-recompile" class="btn btn-full">Recompile &amp; Flash</button>
+                            </div>
+                            <div class="btn-row" style="margin-top:4px">
+                                <button id="btn-reset" class="btn btn-full btn-secondary">Reset to Neutral</button>
+                            </div>
+                        </div>
+
+                        <div class="ctrl-section">
+                            <div class="ctrl-title">MOVEMENT</div>
+                            <div class="dpad">
+                                <button class="dpad-btn" data-cmd="forward" title="Forward">FWD</button>
+                                <button class="dpad-btn" data-cmd="turn_left" title="Turn Left">L</button>
+                                <button class="dpad-btn" data-cmd="stop" title="Stop">STP</button>
+                                <button class="dpad-btn" data-cmd="turn_right" title="Turn Right">R</button>
+                                <button class="dpad-btn" data-cmd="backward" title="Backward">REV</button>
+                            </div>
+                            <div class="slider-row">
+                                <label>Speed</label>
+                                <input type="range" min="10" max="100" value="50" id="speed-slider"
+                                    oninput="document.getElementById('speed-val').textContent=this.value+'%'">
+                                <span id="speed-val" class="slider-val">50%</span>
+                            </div>
+                            <div class="slider-row">
+                                <label>Gait</label>
+                                <select id="gait-select" class="ctrl-select">
+                                    <option value="0">Tripod</option>
+                                    <option value="1">Wave</option>
+                                    <option value="2">Ripple</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="ctrl-section">
+                            <div class="ctrl-title">TIME SCALE</div>
+                            <div class="slider-row">
+                                <label>Scale</label>
+                                <input type="range" min="10" max="300" value="100" id="timescale-slider"
+                                    oninput="window.TimeScale=this.value/100; document.getElementById('timescale-val').textContent=window.TimeScale.toFixed(1)+'x'; document.getElementById('timescale-label').textContent=window.TimeScale.toFixed(1)+'x';">
+                                <span id="timescale-val" class="slider-val">1.0x</span>
+                            </div>
+                        </div>
+
+                        <div class="ctrl-section">
+                            <div class="ctrl-title">TESTS</div>
+                            <select id="test-select" class="ctrl-select" style="margin-bottom:6px; width:100%">
+                                <option value="gait">All Gaits (cycle)</option>
+                                <option value="tripod">Tripod Only</option>
+                                <option value="wave">Wave Only</option>
+                                <option value="ripple">Ripple Only</option>
+                                <option value="arm">Arm Sweep</option>
+                            </select>
+                            <button id="btn-run-test" class="btn btn-full">Run Test</button>
+                        </div>
+
+                        <div class="ctrl-section">
+                            <div class="ctrl-title">PHYSICS BALL</div>
+                            <div class="btn-row">
+                                <button class="btn btn-accent" id="btn-drop-ball">Drop</button>
+                                <button class="btn" id="btn-reset-ball">Reset</button>
+                            </div>
+                            <label class="toggle-row">
+                                <input type="checkbox" id="ball-place-mode">
+                                <span>Click to Place</span>
+                            </label>
+                            <p class="hint">Click-drag to throw. Shift+drag = height.</p>
+                        </div>
+
+                        <div class="ctrl-section">
+                            <div class="ctrl-title">ARM CONTROL</div>
+                            <label class="toggle-row">
+                                <input type="checkbox" id="arm-override-toggle">
+                                <span>Manual Override</span>
+                            </label>
+                            <div class="slider-group">
+                                <div class="slider-row">
+                                    <label>Base</label>
+                                    <input type="range" min="0" max="180" value="90" id="arm-base-slider">
+                                    <span id="arm-base-val" class="slider-val">90</span>
+                                </div>
+                                <div class="slider-row">
+                                    <label>Shoulder</label>
+                                    <input type="range" min="0" max="180" value="90" id="arm-shoulder-slider">
+                                    <span id="arm-shoulder-val" class="slider-val">90</span>
+                                </div>
+                                <div class="slider-row">
+                                    <label>Elbow</label>
+                                    <input type="range" min="0" max="180" value="90" id="arm-elbow-slider">
+                                    <span id="arm-elbow-val" class="slider-val">90</span>
+                                </div>
+                                <div class="slider-row">
+                                    <label>Gripper</label>
+                                    <input type="range" min="0" max="180" value="0" id="arm-gripper-slider">
+                                    <span id="arm-gripper-val" class="slider-val">0</span>
+                                </div>
+                            </div>
+                            <div id="arm-readout" class="arm-readout"></div>
+                            <div class="section-divider"></div>
+                            <label class="toggle-row">
+                                <input type="checkbox" id="ik-mode-toggle">
+                                <span>IK Cursor Mode</span>
+                            </label>
+                            <div id="ik-readout" class="arm-readout ik-readout"></div>
+                        </div>
+
+                    </div>
+                </div>
+
+            </div><!-- #left-column -->
+
+            <!-- RIGHT COLUMN: 3D / 2D View -->
+            <div id="right-column">
+
+                <div class="pane active" id="pane-view3d">
+                    <div class="pane-header">3D VIEWPORT</div>
+                    <div class="pane-body" style="padding:0">
+                        <div id="three-container" style="width:100%;height:100%"></div>
+                    </div>
+                </div>
+
+                <div class="pane" id="pane-view2d">
+                    <div class="pane-header">2D TOP-DOWN</div>
+                    <div class="pane-body" style="padding:0">
+                        <canvas id="canvas-2d"></canvas>
+                    </div>
+                </div>
+
+            </div><!-- #right-column -->
+
+        </div><!-- #workspace -->
+
+    </div><!-- #app -->
+
+    <script src="websocket.js"></script>
+    <script src="debugview.js"></script>
+    <script src="viewer2d.js"></script>
+    <script type="module" src="viewer3d.js"></script>
+    <script>
+        // ── Time scale ──────────────────────────────────────────────────────
+        window.TimeScale = 1.0;
+
+        // ── Active test handles (for cancellation) ───────────────────────────
+        let _activeTestTimeout = null;
+        let _activeTestInterval = null;
+
+        // ── Central stop: kills all active commands immediately ──────────────
+        function clearAll() {
+            // Cancel any in-flight test timers
+            if (_activeTestTimeout !== null) { clearTimeout(_activeTestTimeout); _activeTestTimeout = null; }
+            if (_activeTestInterval !== null) { clearInterval(_activeTestInterval); _activeTestInterval = null; }
+
+            // Stop gait
+            if (window.GaitControl) {
+                window.GaitControl.active = false;
+                window.GaitControl.command = 'stop';
+                window.GaitControl.phase = 0;
+            }
+
+            // Stop arm override
+            if (window.ArmControl) {
+                window.ArmControl.override = false;
+                document.getElementById('arm-override-toggle').checked = false;
+            }
+
+            // Reset test button appearance
+            const testBtn = document.getElementById('btn-run-test');
+            if (testBtn) { testBtn.textContent = 'Run Test'; testBtn.disabled = false; }
+        }
+
+        // ── Splash screen ───────────────────────────────────────────────────
+        document.getElementById('btn-launch').addEventListener('click', async () => {
+            const btn = document.getElementById('btn-launch');
+            const status = document.getElementById('splash-status');
+            btn.disabled = true;
+            btn.textContent = 'Building...';
+            status.textContent = 'Compiling simulator and starting bridge server...';
+            status.className = 'splash-status active';
+
+            try {
+                const res = await fetch('/api/compile', { method: 'POST' });
+                const data = await res.json();
+                if (data.status === 'ok') {
+                    status.textContent = 'System online.';
+                    setTimeout(() => {
+                        document.getElementById('splash-screen').classList.add('hidden');
+                        document.getElementById('app').classList.remove('hidden');
+                        window.dispatchEvent(new Event('resize'));
+                        // Apply neutral state on boot (same as pressing Reset to Neutral)
+                        document.getElementById('btn-reset').click();
+                    }, 400);
+                } else {
+                    status.textContent = 'Build failed: ' + (data.message || 'Unknown error');
+                    status.className = 'splash-status error';
+                    btn.disabled = false;
+                    btn.textContent = 'Retry';
+                }
+            } catch (e) {
+                status.textContent = 'Connection error. Is the server running?';
+                status.className = 'splash-status error';
+                btn.disabled = false;
+                btn.textContent = 'Retry';
+            }
+        });
+
+        // ── Panel toggle system ──────────────────────────────────────────────
+        const paneMap = {
+            controls: 'pane-controls',
+            debug:    'pane-debug',
+            view3d:   'pane-view3d',
+            view2d:   'pane-view2d',
+        };
+
+        document.querySelectorAll('.ptab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                const key = tab.dataset.panel;
+                const pane = document.getElementById(paneMap[key]);
+                const isActive = tab.classList.contains('active');
+                tab.classList.toggle('active', !isActive);
+                pane.classList.toggle('active', !isActive);
+                window.dispatchEvent(new Event('resize'));
+            });
+        });
+
+        // ── Recompile ────────────────────────────────────────────────────────
+        document.getElementById('btn-recompile').addEventListener('click', async () => {
+            clearAll();
+            const btn = document.getElementById('btn-recompile');
+            btn.textContent = 'Building...';
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/compile', { method: 'POST' });
+                const data = await res.json();
+                btn.textContent = data.status === 'ok' ? 'OK' : 'FAILED';
+            } catch (e) {
+                btn.textContent = 'ERROR';
+            }
+            setTimeout(() => { btn.textContent = 'Recompile & Flash'; btn.disabled = false; }, 2500);
+        });
+
+        // ── Reset button ─────────────────────────────────────────────────────
+        document.getElementById('btn-reset').addEventListener('click', () => {
+            clearAll();
+            if (window.IKCursor) {
+                window.IKCursor.active = false;
+                document.getElementById('ik-mode-toggle').checked = false;
+            }
+            // Reset arm sliders
+            document.getElementById('arm-base-slider').value = 90;
+            document.getElementById('arm-shoulder-slider').value = 90;
+            document.getElementById('arm-elbow-slider').value = 90;
+            document.getElementById('arm-gripper-slider').value = 0;
+            document.getElementById('arm-base-val').textContent = '90';
+            document.getElementById('arm-shoulder-val').textContent = '90';
+            document.getElementById('arm-elbow-val').textContent = '90';
+            document.getElementById('arm-gripper-val').textContent = '0';
+            document.getElementById('speed-slider').value = 50;
+            document.getElementById('speed-val').textContent = '50%';
+            if (window.resetRobotPosition) window.resetRobotPosition();
+        });
+
+        // ── D-pad & keyboard movement ────────────────────────────────────────
+        function sendRobotCommand(cmd) {
+            // Cancel any running test before taking manual control
+            clearAll();
+            if (cmd.type === 'move' && window.GaitControl) {
+                window.GaitControl.command = cmd.command;
+                window.GaitControl.speed = cmd.speed || 0.5;
+                window.GaitControl.gait = cmd.gait || 0;
+                window.GaitControl.active = cmd.command !== 'stop';
+                window.GaitControl.phase = 0;
+            }
+            fetch('/api/command', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(cmd)
+            }).catch(() => {});
+        }
+
+        document.querySelectorAll('.dpad-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                sendRobotCommand({
+                    type: 'move',
+                    command: btn.dataset.cmd,
+                    speed: document.getElementById('speed-slider').value / 100,
+                    gait: +document.getElementById('gait-select').value
+                });
+            });
+        });
+
+        const keymap = { ArrowUp:'forward', ArrowDown:'backward', ArrowLeft:'turn_left', ArrowRight:'turn_right', ' ':'stop' };
+        document.addEventListener('keydown', e => {
+            if (keymap[e.key]) {
+                e.preventDefault();
+                sendRobotCommand({
+                    type: 'move',
+                    command: keymap[e.key],
+                    speed: document.getElementById('speed-slider').value / 100,
+                    gait: +document.getElementById('gait-select').value
+                });
+            }
+        });
+
+        // ── Test runner (client-side gait demo) ──────────────────────────────
+        document.getElementById('btn-run-test').addEventListener('click', () => {
+            clearAll(); // wipe any previous command first
+            const btn = document.getElementById('btn-run-test');
+            const testName = document.getElementById('test-select').value;
+            btn.textContent = 'Running...';
+            btn.disabled = true;
+
+            if (testName === 'arm') {
+                if (window.ArmControl) {
+                    window.ArmControl.override = true;
+                    document.getElementById('arm-override-toggle').checked = true;
+                    let angle = 0;
+                    _activeTestInterval = setInterval(() => {
+                        angle += 2;
+                        if (angle > 360) {
+                            clearInterval(_activeTestInterval);
+                            _activeTestInterval = null;
+                            window.ArmControl.override = false;
+                            document.getElementById('arm-override-toggle').checked = false;
+                            btn.textContent = 'Run Test';
+                            btn.disabled = false;
+                            return;
+                        }
+                        window.ArmControl.base = 90 + 60 * Math.sin(angle * Math.PI / 180);
+                        window.ArmControl.shoulder = 90 + 40 * Math.sin(angle * Math.PI / 90);
+                        window.ArmControl.elbow = 90 + 30 * Math.cos(angle * Math.PI / 120);
+                    }, 30);
+                }
+                return;
+            }
+
+            const gaitMap = { tripod: 0, wave: 1, ripple: 2 };
+            const gaitsToRun = testName === 'gait' ? [0, 1, 2]
+                : [gaitMap[testName] !== undefined ? gaitMap[testName] : 0];
+
+            let currentGaitIdx = 0;
+            const GAIT_DURATION = 4000;
+
+            function runNextGait() {
+                if (currentGaitIdx >= gaitsToRun.length) {
+                    window.GaitControl.active = false;
+                    window.GaitControl.command = 'stop';
+                    btn.textContent = 'Run Test';
+                    btn.disabled = false;
+                    _activeTestTimeout = null;
+                    return;
+                }
+                window.GaitControl.gait = gaitsToRun[currentGaitIdx];
+                window.GaitControl.command = 'forward';
+                window.GaitControl.speed = 0.6;
+                window.GaitControl.active = true;
+                window.GaitControl.phase = 0;
+
+                const names = ['Tripod', 'Wave', 'Ripple'];
+                btn.textContent = names[gaitsToRun[currentGaitIdx]] + '...';
+                currentGaitIdx++;
+                _activeTestTimeout = setTimeout(runNextGait, GAIT_DURATION);
+            }
+
+            runNextGait();
+        });
+
+        // ── Physics ball ─────────────────────────────────────────────────────
+        document.getElementById('btn-drop-ball').addEventListener('click', () => {
+            if (window.PhysicsBall) window.PhysicsBall.drop();
+        });
+        document.getElementById('btn-reset-ball').addEventListener('click', () => {
+            if (window.PhysicsBall) window.PhysicsBall.reset();
+        });
+        document.getElementById('ball-place-mode').addEventListener('change', function() {
+            window.BallPlaceMode = this.checked;
+        });
+
+        // ── IK cursor toggle ────────────────────────────────────────────────
+        document.getElementById('ik-mode-toggle').addEventListener('change', function() {
+            if (window.IKCursor) window.IKCursor.active = this.checked;
+        });
+
+        // ── Arm sliders ──────────────────────────────────────────────────────
+        [['arm-base-slider','arm-base-val','base'],
+         ['arm-shoulder-slider','arm-shoulder-val','shoulder'],
+         ['arm-elbow-slider','arm-elbow-val','elbow'],
+         ['arm-gripper-slider','arm-gripper-val','gripper']].forEach(([sid, vid, key]) => {
+            document.getElementById(sid).addEventListener('input', function() {
+                document.getElementById(vid).textContent = this.value;
+                if (window.ArmControl) window.ArmControl[key] = +this.value;
+            });
+        });
+
+        document.getElementById('arm-override-toggle').addEventListener('change', function() {
+            if (window.ArmControl) window.ArmControl.override = this.checked;
+        });
+
+        // Live readout
+        setInterval(() => {
+            if (!window.ArmControl || window.ArmControl.override) return;
+            const ro = document.getElementById('arm-readout');
+            if (window.ArmControl.currentBase !== undefined) {
+                ro.textContent = `B:${window.ArmControl.currentBase.toFixed(0)} `
+                    + `S:${window.ArmControl.currentShoulder.toFixed(0)} `
+                    + `E:${window.ArmControl.currentElbow.toFixed(0)} `
+                    + `G:${window.ArmControl.currentGripper.toFixed(0)}`;
+            }
+        }, 100);
+    </script>
+</body>
+</html>
