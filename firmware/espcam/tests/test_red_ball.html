@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Red Ball Detection — Project Talos</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #111; color: #eee; font-family: monospace; font-size: 13px; padding: 16px; }
+  h1 { font-size: 16px; color: #f90; margin-bottom: 12px; }
+
+  #status { margin-bottom: 12px; }
+  #status span { padding: 3px 8px; border-radius: 3px; font-size: 12px; }
+  .connected    { background: #1a4; }
+  .disconnected { background: #a22; }
+
+  .layout { display: grid; grid-template-columns: 340px 1fr; gap: 16px; }
+
+  /* camera view */
+  #cam-wrap { position: relative; width: 320px; height: 240px; border: 1px solid #444; }
+  #cam-canvas { display: block; }
+
+  /* stats panels */
+  .panel { background: #1a1a1a; border: 1px solid #333; border-radius: 4px; padding: 10px; margin-bottom: 10px; }
+  .panel h2 { font-size: 12px; color: #888; text-transform: uppercase; margin-bottom: 8px; border-bottom: 1px solid #333; padding-bottom: 4px; }
+
+  .stat-row { display: flex; justify-content: space-between; padding: 2px 0; }
+  .stat-label { color: #888; }
+  .stat-val { color: #4cf; font-weight: bold; }
+  .stat-val.detected   { color: #4f4; }
+  .stat-val.undetected { color: #f44; }
+
+  /* packet display */
+  .pkt-bytes { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 6px; }
+  .byte {
+    display: inline-block; padding: 3px 5px; border-radius: 3px;
+    font-size: 11px; background: #2a2a2a; border: 1px solid #444;
+    text-align: center; cursor: default;
+  }
+  .byte.start    { border-color: #666; color: #aaa; }
+  .byte.type     { border-color: #88f; color: #aaf; }
+  .byte.det      { border-color: #4f4; color: #4f4; }
+  .byte.det.off  { border-color: #f44; color: #f44; }
+  .byte.coord    { border-color: #4cf; color: #4cf; }
+  .byte.radius   { border-color: #fa4; color: #fa4; }
+  .byte.chk      { border-color: #888; color: #aaa; }
+  .byte-label    { font-size: 9px; color: #666; text-align: center; }
+
+  #fps { color: #888; font-size: 11px; margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<h1>Red Ball Detection — Project Talos</h1>
+
+<div id="status"><span id="status-badge" class="disconnected">DISCONNECTED</span>
+  <span id="fps">— fps</span>
+</div>
+
+<div class="layout">
+
+  <!-- camera view canvas -->
+  <div>
+    <div id="cam-wrap">
+      <canvas id="cam-canvas" width="320" height="240"></canvas>
+    </div>
+    <div style="color:#666;font-size:11px;margin-top:4px;">320×240 — crosshair = center, circle = detected ball</div>
+  </div>
+
+  <!-- right panels -->
+  <div>
+
+    <div class="panel">
+      <h2>Detection</h2>
+      <div class="stat-row"><span class="stat-label">Detected</span>      <span class="stat-val" id="s-det">—</span></div>
+      <div class="stat-row"><span class="stat-label">Centroid (px)</span> <span class="stat-val" id="s-centroid">—</span></div>
+      <div class="stat-row"><span class="stat-label">Blob area (px²)</span><span class="stat-val" id="s-blob">—</span></div>
+      <div class="stat-row"><span class="stat-label">Pixel radius</span>  <span class="stat-val" id="s-pxr">—</span></div>
+    </div>
+
+    <div class="panel">
+      <h2>Position (relative to center)</h2>
+      <div class="stat-row"><span class="stat-label">Offset X</span>      <span class="stat-val" id="s-ox">—</span></div>
+      <div class="stat-row"><span class="stat-label">Offset Y</span>      <span class="stat-val" id="s-oy">—</span></div>
+      <div class="stat-row"><span class="stat-label">Bearing</span>       <span class="stat-val" id="s-brg">—</span></div>
+    </div>
+
+    <div class="panel">
+      <h2>Distance Estimate</h2>
+      <div class="stat-row"><span class="stat-label">Estimated dist</span><span class="stat-val" id="s-dist">—</span></div>
+      <div class="stat-row"><span class="stat-label">TOF available</span> <span class="stat-val" id="s-tof">—</span></div>
+    </div>
+
+    <div class="panel">
+      <h2>UART Packet (11 bytes)</h2>
+      <div class="pkt-bytes" id="pkt-bytes">—</div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:#666;">
+        <span><span style="color:#aaa">██</span> start</span>
+        <span><span style="color:#aaf">██</span> type</span>
+        <span><span style="color:#4f4">██</span> detected</span>
+        <span><span style="color:#4cf">██</span> x/y</span>
+        <span><span style="color:#fa4">██</span> radius</span>
+        <span><span style="color:#aaa">██</span> checksum</span>
+      </div>
+      <div style="margin-top:6px;">
+        <div class="stat-row"><span class="stat-label">Decoded X</span>     <span class="stat-val" id="pd-x">—</span></div>
+        <div class="stat-row"><span class="stat-label">Decoded Y</span>     <span class="stat-val" id="pd-y">—</span></div>
+        <div class="stat-row"><span class="stat-label">Decoded R</span>     <span class="stat-val" id="pd-r">—</span></div>
+        <div class="stat-row"><span class="stat-label">Checksum</span>      <span class="stat-val" id="pd-chk">—</span></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const WS_URL = "ws://localhost:8765";
+const CAM_W = 320, CAM_H = 240;
+
+const canvas = document.getElementById("cam-canvas");
+const ctx = canvas.getContext("2d");
+
+let lastFrameTime = null;
+let fpsSmooth = 0;
+let lastData = null;
+
+// draw the camera view
+function drawCanvas(data) {
+  ctx.clearRect(0, 0, CAM_W, CAM_H);
+
+  // background
+  ctx.fillStyle = "#1a1a1a";
+  ctx.fillRect(0, 0, CAM_W, CAM_H);
+
+  // crosshair
+  ctx.strokeStyle = "#444";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(CAM_W / 2, 0); ctx.lineTo(CAM_W / 2, CAM_H);
+  ctx.moveTo(0, CAM_H / 2); ctx.lineTo(CAM_W, CAM_H / 2);
+  ctx.stroke();
+
+  if (!data || !data.det) return;
+
+  const cx = data.cx, cy = data.cy;
+  const r  = Math.max(4, data.px_r);
+
+  // blob circle
+  ctx.strokeStyle = "#f00";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+  ctx.stroke();
+
+  // fill with transparent red
+  ctx.fillStyle = "rgba(255,0,0,0.15)";
+  ctx.fill();
+
+  // centroid dot
+  ctx.fillStyle = "#f44";
+  ctx.beginPath();
+  ctx.arc(cx, cy, 3, 0, 2 * Math.PI);
+  ctx.fill();
+
+  // offset line from center to centroid
+  ctx.strokeStyle = "#f804";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(CAM_W / 2, CAM_H / 2);
+  ctx.lineTo(cx, cy);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function updateStats(d) {
+  const detected = d.det === 1;
+
+  const detEl = document.getElementById("s-det");
+  detEl.textContent = detected ? "YES" : "NO";
+  detEl.className = "stat-val " + (detected ? "detected" : "undetected");
+
+  document.getElementById("s-centroid").textContent = detected ? `(${d.cx}, ${d.cy})` : "—";
+  document.getElementById("s-blob").textContent     = detected ? d.blob : "—";
+  document.getElementById("s-pxr").textContent      = detected ? `${d.px_r.toFixed(1)} px` : "—";
+
+  document.getElementById("s-ox").textContent  = detected ? `${(d.ox * 100).toFixed(1)}% ${d.ox > 0 ? "right" : d.ox < 0 ? "left" : "center"}` : "—";
+  document.getElementById("s-oy").textContent  = detected ? `${(d.oy * 100).toFixed(1)}% ${d.oy > 0 ? "down"  : d.oy < 0 ? "up"   : "center"}` : "—";
+  document.getElementById("s-brg").textContent = detected ? `${d.brg_deg.toFixed(2)}°` : "—";
+
+  document.getElementById("s-dist").textContent = detected && d.dist_mm > 0 ? `${d.dist_mm.toFixed(0)} mm` : "—";
+  document.getElementById("s-tof").textContent  = d.tof ? "YES" : "NO";
+
+  // packet bytes
+  const pktEl = document.getElementById("pkt-bytes");
+  if (d.pkt && d.pkt.length === 22) {
+    const bytes = [];
+    for (let i = 0; i < 11; i++) bytes.push(parseInt(d.pkt.slice(i*2, i*2+2), 16));
+
+    const labels = ["start","start","type", detected?"det":"det off","x_hi","x_lo","y_hi","y_lo","r_hi","r_lo","chk"];
+    const classes = ["start","start","type", detected?"det":"det off","coord","coord","coord","coord","radius","radius","chk"];
+
+    pktEl.innerHTML = bytes.map((b, i) =>
+      `<div><div class="byte ${classes[i]}" title="${labels[i]}">0x${b.toString(16).toUpperCase().padStart(2,'0')}</div>
+       <div class="byte-label">${labels[i]}</div></div>`
+    ).join("");
+  } else {
+    pktEl.textContent = "—";
+  }
+
+  if (d.pkt_decoded) {
+    const pd = d.pkt_decoded;
+    document.getElementById("pd-x").textContent   = pd.x;
+    document.getElementById("pd-y").textContent   = pd.y;
+    document.getElementById("pd-r").textContent   = pd.r;
+    document.getElementById("pd-chk").textContent = pd.checksum;
+  }
+}
+
+function updateFps() {
+  const now = performance.now();
+  if (lastFrameTime !== null) {
+    const dt = now - lastFrameTime;
+    fpsSmooth = fpsSmooth * 0.8 + (1000 / dt) * 0.2;
+    document.getElementById("fps").textContent = `${fpsSmooth.toFixed(1)} fps  |  frame #${lastData?.frame ?? 0}`;
+  }
+  lastFrameTime = now;
+}
+
+function connect() {
+  const badge = document.getElementById("status-badge");
+  badge.textContent = "CONNECTING...";
+  badge.className = "disconnected";
+
+  const ws = new WebSocket(WS_URL);
+
+  ws.onopen = () => {
+    badge.textContent = "CONNECTED";
+    badge.className = "connected";
+  };
+
+  ws.onmessage = (evt) => {
+    const d = JSON.parse(evt.data);
+    lastData = d;
+    updateStats(d);
+    drawCanvas(d);
+    updateFps();
+  };
+
+  ws.onclose = () => {
+    badge.textContent = "DISCONNECTED — retrying in 2s";
+    badge.className = "disconnected";
+    drawCanvas(null);
+    setTimeout(connect, 2000);
+  };
+
+  ws.onerror = () => ws.close();
+}
+
+// draw empty frame on load
+drawCanvas(null);
+connect();
+</script>
+</body>
+</html>

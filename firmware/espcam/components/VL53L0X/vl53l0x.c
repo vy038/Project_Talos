@@ -641,7 +641,7 @@ vl53l0x_config (int8_t port, int8_t scl, int8_t sda, int8_t xshut, uint8_t addre
       i2c_driver_delete (port);
       return NULL;
    }
-   i2c_set_timeout (port, 80000);       // Clock stretching
+   i2c_set_timeout (port, 20);          // Clock stretching (ESP32-S3: 2^20 APB cycles ~= 13ms)
    i2c_filter_enable (port, 5);
    if (xshut >= 0)
    {
