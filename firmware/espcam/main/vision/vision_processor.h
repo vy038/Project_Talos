@@ -5,14 +5,50 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#define VISION_CAM_WIDTH    320
+#define VISION_CAM_HEIGHT   240
+
+/**
+ * @brief Full result from one detection frame.
+ *
+ * dist_mm is the fused best estimate: TOF when available and valid,
+ * pinhole pixel estimate otherwise. dist_px_mm and dist_tof_mm are
+ * kept separately for logging/debugging.
+ */
+typedef struct {
+    bool     detected;
+    int      centroid_x;    // pixels from left edge
+    int      centroid_y;    // pixels from top edge
+    float    pixel_radius;  // sqrt(blob_pixels / pi)
+    int      blob_pixels;
+    float    offset_x;      // -1.0 (left) to +1.0 (right) relative to center
+    float    offset_y;      // -1.0 (top)  to +1.0 (bottom) relative to center
+    float    bearing_deg;   // horizontal angle from center, negative = left
+    float    dist_px_mm;    // distance estimate from pinhole + ball radius
+    float    dist_tof_mm;   // VL53L0X reading, 0 if unavailable
+    float    dist_mm;       // fused best estimate, 0 if not detected
+} ball_detection_t;
+
 /**
  * @brief Initialize vision processor
  *
- * Sets up camera interface and processing buffers
+ * Sets up camera, allocates internal frame/HSV/mask buffers in PSRAM,
+ * and initializes VL53L0X TOF sensor.
  *
  * @return esp_err_t ESP_OK on success, error code on failure
  */
 esp_err_t xVisionProcessorInit(void);
+
+/**
+ * @brief Set the known physical radius of the ball being tracked.
+ *
+ * Used by xVisionDetectBall to compute pinhole distance estimate.
+ * Must be called before xVisionDetectBall. Default is 0 (disables
+ * pixel-based distance estimate).
+ *
+ * @param radius_mm physical radius of the ball in millimeters
+ */
+void vVisionSetBallRadius(float radius_mm);
 
 /**
  * @brief Capture camera frame
@@ -90,5 +126,19 @@ uint16_t uiTofReadDistanceMm(void);
  * @return true if sensor is ready
  */
 bool bTofIsAvailable(void);
+
+/**
+ * @brief Capture frame and run full detection pipeline.
+ *
+ * Runs: capture -> RGB565->HSV -> red threshold -> blob detect ->
+ * pinhole distance estimate -> TOF read -> fused result.
+ *
+ * Uses internal buffers allocated at init. Thread-safe only if
+ * called from a single task.
+ *
+ * @param result output detection result
+ * @return ESP_OK on success, ESP_FAIL if capture failed
+ */
+esp_err_t xVisionDetectBall(ball_detection_t *result);
 
 #endif
