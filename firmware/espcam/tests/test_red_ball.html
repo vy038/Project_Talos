@@ -4,53 +4,88 @@
 <meta charset="UTF-8">
 <title>Red Ball Detection — Project Talos</title>
 <style>
+  :root {
+    --bg-0: #0b0e14; --bg-1: #0f1219; --bg-2: #151a24; --bg-3: #1a2030;
+    --border: #1e2738; --border-focus: #2a3a52;
+    --text-primary: #c8cdd5; --text-dim: #5a6578; --text-muted: #3d4654;
+    --accent: #3b82f6; --danger: #ef4444; --success: #22c55e;
+    --warning: #f59e0b; --cyan: #06b6d4;
+    --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: #111; color: #eee; font-family: monospace; font-size: 13px; padding: 16px; }
-  h1 { font-size: 16px; color: #f90; margin-bottom: 12px; }
+  body {
+    background: var(--bg-0); color: var(--text-primary);
+    font-family: var(--font-mono); font-size: 11px; padding: 8px;
+    overflow-x: hidden;
+  }
+  h1 {
+    font-size: 10px; font-weight: 700; color: var(--accent);
+    letter-spacing: 0.1em; text-transform: uppercase;
+    margin-bottom: 6px; padding-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+  }
 
-  #status { margin-bottom: 12px; }
-  #status span { padding: 3px 8px; border-radius: 3px; font-size: 12px; }
-  .connected    { background: #1a4; }
-  .disconnected { background: #a22; }
+  #status { margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+  #status-badge {
+    padding: 2px 7px; font-size: 9px; font-weight: 700;
+    letter-spacing: 0.06em;
+  }
+  .connected    { background: transparent; color: var(--success); border: 1px solid var(--success); }
+  .disconnected { background: transparent; color: var(--danger);  border: 1px solid var(--danger); }
 
-  .layout { display: grid; grid-template-columns: 340px 1fr; gap: 16px; }
+  .layout { display: grid; grid-template-columns: 322px 1fr; gap: 8px; }
 
   /* camera view */
-  #cam-wrap { position: relative; width: 320px; height: 240px; border: 1px solid #444; }
+  #cam-wrap { position: relative; width: 320px; height: 240px; border: 1px solid var(--border); }
   #cam-canvas { display: block; }
+  .cam-hint { color: var(--text-muted); font-size: 9px; margin-top: 3px; }
 
   /* stats panels */
-  .panel { background: #1a1a1a; border: 1px solid #333; border-radius: 4px; padding: 10px; margin-bottom: 10px; }
-  .panel h2 { font-size: 12px; color: #888; text-transform: uppercase; margin-bottom: 8px; border-bottom: 1px solid #333; padding-bottom: 4px; }
+  .panel {
+    background: var(--bg-2); border: 1px solid var(--border);
+    padding: 6px 8px; margin-bottom: 4px;
+  }
+  .panel h2 {
+    font-size: 9px; font-weight: 700; color: var(--accent);
+    text-transform: uppercase; letter-spacing: 0.08em;
+    margin-bottom: 5px; border-bottom: 1px solid var(--border);
+    padding-bottom: 3px;
+  }
 
-  .stat-row { display: flex; justify-content: space-between; padding: 2px 0; }
-  .stat-label { color: #888; }
-  .stat-val { color: #4cf; font-weight: bold; }
-  .stat-val.detected   { color: #4f4; }
-  .stat-val.undetected { color: #f44; }
+  .stat-row { display: flex; justify-content: space-between; padding: 1px 0; }
+  .stat-label { color: var(--text-muted); }
+  .stat-val { color: var(--cyan); font-weight: 600; }
+  .stat-val.detected   { color: var(--success); }
+  .stat-val.undetected { color: var(--danger); }
 
   /* packet display */
-  .pkt-bytes { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 6px; }
+  .pkt-bytes { display: flex; gap: 3px; flex-wrap: wrap; margin-bottom: 5px; }
   .byte {
-    display: inline-block; padding: 3px 5px; border-radius: 3px;
-    font-size: 11px; background: #2a2a2a; border: 1px solid #444;
-    text-align: center; cursor: default;
+    display: inline-block; padding: 2px 4px;
+    font-size: 10px; background: var(--bg-3); border: 1px solid var(--border);
+    text-align: center; cursor: default; font-family: var(--font-mono);
   }
-  .byte.start    { border-color: #666; color: #aaa; }
-  .byte.type     { border-color: #88f; color: #aaf; }
-  .byte.det      { border-color: #4f4; color: #4f4; }
-  .byte.det.off  { border-color: #f44; color: #f44; }
-  .byte.coord    { border-color: #4cf; color: #4cf; }
-  .byte.radius   { border-color: #fa4; color: #fa4; }
-  .byte.chk      { border-color: #888; color: #aaa; }
-  .byte-label    { font-size: 9px; color: #666; text-align: center; }
+  .byte.start    { border-color: var(--text-muted); color: var(--text-dim); }
+  .byte.type     { border-color: #6366f1; color: #a5b4fc; }
+  .byte.det      { border-color: var(--success); color: var(--success); }
+  .byte.det.off  { border-color: var(--danger);  color: var(--danger); }
+  .byte.coord    { border-color: var(--cyan);    color: var(--cyan); }
+  .byte.radius   { border-color: var(--warning); color: var(--warning); }
+  .byte.chk      { border-color: var(--text-muted); color: var(--text-dim); }
+  .byte-label    { font-size: 8px; color: var(--text-muted); text-align: center; }
 
-  #fps { color: #888; font-size: 11px; margin-top: 4px; }
+  .pkt-legend { display: flex; gap: 10px; flex-wrap: wrap; font-size: 9px; color: var(--text-muted); margin-bottom: 4px; }
+
+  #fps { color: var(--text-dim); font-size: 9px; }
+
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: var(--bg-0); }
+  ::-webkit-scrollbar-thumb { background: var(--border); }
 </style>
 </head>
 <body>
 
-<h1>Red Ball Detection — Project Talos</h1>
+<h1>ESP-CAM — Red Ball Detection</h1>
 
 <div id="status"><span id="status-badge" class="disconnected">DISCONNECTED</span>
   <span id="fps">— fps</span>
@@ -63,7 +98,7 @@
     <div id="cam-wrap">
       <canvas id="cam-canvas" width="320" height="240"></canvas>
     </div>
-    <div style="color:#666;font-size:11px;margin-top:4px;">320×240 — crosshair = center, circle = detected ball</div>
+    <div class="cam-hint">320×240 — crosshair = center, circle = detected ball</div>
   </div>
 
   <!-- right panels -->
@@ -93,13 +128,13 @@
     <div class="panel">
       <h2>UART Packet (11 bytes)</h2>
       <div class="pkt-bytes" id="pkt-bytes">—</div>
-      <div style="display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:#666;">
-        <span><span style="color:#aaa">██</span> start</span>
-        <span><span style="color:#aaf">██</span> type</span>
-        <span><span style="color:#4f4">██</span> detected</span>
-        <span><span style="color:#4cf">██</span> x/y</span>
-        <span><span style="color:#fa4">██</span> radius</span>
-        <span><span style="color:#aaa">██</span> checksum</span>
+      <div class="pkt-legend">
+        <span><span style="color:#5a6578">██</span> start</span>
+        <span><span style="color:#a5b4fc">██</span> type</span>
+        <span><span style="color:#22c55e">██</span> det</span>
+        <span><span style="color:#06b6d4">██</span> x/y</span>
+        <span><span style="color:#f59e0b">██</span> radius</span>
+        <span><span style="color:#5a6578">██</span> chk</span>
       </div>
       <div style="margin-top:6px;">
         <div class="stat-row"><span class="stat-label">Decoded X</span>     <span class="stat-val" id="pd-x">—</span></div>
