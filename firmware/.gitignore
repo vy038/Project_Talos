@@ -19,3 +19,4 @@ __pycache__/
 Thumbs.db
 
 sdkconfig
+sdkconfig.defaults
