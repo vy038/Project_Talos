@@ -22,16 +22,28 @@
 /* -------------------------------------------------------------------------- */
 
 /** Base mounting tilt in degrees (0 = shoulder axis horizontal, 90 = vertical). */
-#define ARM_BASE_ANGLE       0.0f
+#define ARM_BASE_ANGLE       38.0f
 
 /** Vertical distance from robot body frame origin to shoulder pivot (mm). */
-#define ARM_BASE_HEIGHT      0.0f
+#define ARM_BASE_HEIGHT      12.0f
 
 /** Shoulder-to-elbow link length (mm). */
-#define ARM_LINK1_LENGTH     0.0f
+#define ARM_LINK1_LENGTH     98.0f
 
-/** Elbow-to-gripper-tip link length (mm). */
-#define ARM_LINK2_LENGTH     0.0f
+/** Shoulder-to-elbow offset length (mm) (to the right of robot). */
+#define ARM_LINK1_OFFSET     18.0f
+
+/** Elbow-to-wrist link length (mm). */
+#define ARM_LINK2_LENGTH     140.0f
+
+/** Elbow-to-wrist offset length (mm) (to the left of robot). */
+#define ARM_LINK2_OFFSET     21.39f
+
+/** Wrist-to-gripper-tip link length (mm). */
+#define ARM_LINK3_LENGTH     91.46f
+
+/** Wrist-to-gripper-tip offset length (mm) (downwards). */
+#define ARM_LINK3_OFFSET     26.83f
 
 /* -------------------------------------------------------------------------- */
 /* Joint limits (degrees)                                                      */
