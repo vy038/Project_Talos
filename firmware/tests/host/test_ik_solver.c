@@ -17,16 +17,24 @@
 /* Now override the zero-valued arm dimensions with real test values */
 #undef ARM_LINK1_LENGTH
 #undef ARM_LINK2_LENGTH
+#undef ARM_LINK1_OFFSET
+#undef ARM_LINK2_OFFSET
+#undef ARM_LINK3_LENGTH
+#undef ARM_LINK3_OFFSET
 #undef ARM_BASE_HEIGHT
 #undef ARM_BASE_ANGLE
 #undef MAX_REACH
 #undef MIN_REACH
-#define ARM_LINK1_LENGTH 100.0f
-#define ARM_LINK2_LENGTH 80.0f
-#define ARM_BASE_HEIGHT  0.0f
-#define ARM_BASE_ANGLE   0.0f
-#define MAX_REACH        (ARM_LINK1_LENGTH + ARM_LINK2_LENGTH)
-#define MIN_REACH        20.0f
+#define ARM_LINK1_LENGTH  100.0f
+#define ARM_LINK2_LENGTH  80.0f
+#define ARM_LINK1_OFFSET  0.0f   /* zero offsets so test math stays clean */
+#define ARM_LINK2_OFFSET  0.0f
+#define ARM_LINK3_LENGTH  0.0f
+#define ARM_LINK3_OFFSET  0.0f
+#define ARM_BASE_HEIGHT   0.0f
+#define ARM_BASE_ANGLE    0.0f
+#define MAX_REACH         (ARM_LINK1_LENGTH + ARM_LINK2_LENGTH)
+#define MIN_REACH         20.0f
 
 /* Suppress unused-variable for TAG in the included .c */
 #pragma GCC diagnostic push
@@ -156,6 +164,8 @@ TEST(ik_various_quadrants) {
 
 int main(void) {
     printf("IK Solver Tests:\n");
+
+    xIKSolverInit();
 
     RUN_TEST(ik_null_args);
     RUN_TEST(ik_reachable_target);
