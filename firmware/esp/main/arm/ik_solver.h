@@ -21,29 +21,43 @@
 /* Arm geometry — fill in from CAD model (mm / degrees)                       */
 /* -------------------------------------------------------------------------- */
 
-/** Base mounting tilt in degrees (0 = shoulder axis horizontal, 90 = vertical). */
-#define ARM_BASE_ANGLE       38.0f
+// Base mounting tilt in degrees (0 = shoulder axis horizontal, 90 = vertical).
+#define ARM_BASE_ANGLE              38.0f
 
-/** Vertical distance from robot body frame origin to shoulder pivot (mm). */
-#define ARM_BASE_HEIGHT      12.0f
+// Vertical distance from robot body frame origin to shoulder pivot (mm).
+#define ARM_BASE_HEIGHT             12.0f
 
-/** Shoulder-to-elbow link length (mm). */
-#define ARM_LINK1_LENGTH     98.0f
+// Shoulder-to-elbow link length (mm).
+#define ARM_LINK1_LENGTH            98.0f
 
-/** Shoulder-to-elbow offset length (mm) (to the right of robot). */
-#define ARM_LINK1_OFFSET     18.0f
+// Shoulder-to-elbow offset length (mm) (to the right of robot).
+#define ARM_LINK1_OFFSET            18.0f
 
-/** Elbow-to-wrist link length (mm). */
-#define ARM_LINK2_LENGTH     140.0f
+// Elbow-to-wrist link length (mm).
+#define ARM_LINK2_LENGTH            140.0f
 
-/** Elbow-to-wrist offset length (mm) (to the left of robot). */
-#define ARM_LINK2_OFFSET     21.39f
+// Elbow-to-wrist offset length (mm) (to the left of robot).
+#define ARM_LINK2_OFFSET            21.39f
 
-/** Wrist-to-gripper-tip link length (mm). */
-#define ARM_LINK3_LENGTH     91.46f
+// Wrist-to-gripper-tip link length (mm).
+#define ARM_LINK3_LENGTH            91.46f
 
-/** Wrist-to-gripper-tip offset length (mm) (downwards). */
-#define ARM_LINK3_OFFSET     26.83f
+// Wrist-to-gripper-tip offset length (mm) (downwards).
+#define ARM_LINK3_OFFSET            26.83f
+
+
+// TODO: move these vlaues somewhere else to do the conversion
+// Arm-origin-to-camera offset length (mm) (forward).
+#define CAMERA_TO_ARM_OFFSET_Z      163.51f
+
+// Arm-origin-to-camera offset height (mm) (downwards).
+#define CAMERA_TO_ARM_OFFSET_X      44.93f
+
+// Camera-origin-to-VL53X offset length (mm) (forward).
+#define CAMERA_TO_VL53X_OFFSET_Z    24.41f
+
+// Camera-origin-to-VL53X offset height (mm) (downwards).
+#define CAMERA_TO_VL53X_OFFSET_X    24.41f
 
 /* -------------------------------------------------------------------------- */
 /* Joint limits (degrees)                                                      */
@@ -64,10 +78,10 @@
 /* Workspace limits                                                            */
 /* -------------------------------------------------------------------------- */
 
-/** Maximum reach of the fully extended arm (mm). */
+// Maximum reach of the fully extended arm (mm).
 #define MAX_REACH               (ARM_LINK1_LENGTH + ARM_LINK2_LENGTH)
 
-/** Minimum reach — set to avoid singularity at origin (mm). */
+// Minimum reach — set to avoid singularity at origin (mm).
 #define MIN_REACH               20.0f
 
 /* -------------------------------------------------------------------------- */
@@ -78,32 +92,32 @@
 /* All values in mm.  Set to 0.0f until measured from CAD / hardware.         */
 /* -------------------------------------------------------------------------- */
 
-/** Forward (X) distance from arm origin to camera (mm). */
+// Forward (X) distance from arm origin to camera (mm).
 #define CAMERA_OFFSET_FORWARD_MM    0.0f
 
-/** Lateral (Y) distance from arm origin to camera — positive = left (mm). */
+// Lateral (Y) distance from arm origin to camera — positive = left (mm).
 #define CAMERA_OFFSET_LATERAL_MM    0.0f
 
-/** Vertical (Z) distance from arm origin to camera — positive = up (mm). */
+// Vertical (Z) distance from arm origin to camera — positive = up (mm).
 #define CAMERA_OFFSET_VERTICAL_MM   0.0f
 
 /* -------------------------------------------------------------------------- */
 /* Types                                                                       */
 /* -------------------------------------------------------------------------- */
 
-/** 3D target position in mm, expressed in the robot body frame. */
+// 3D target position in mm, expressed in the robot body frame.
 typedef struct {
-    float x;   /**< Forward axis (mm). */
-    float y;   /**< Left axis (mm). */
-    float z;   /**< Up axis (mm). */
+    float x;   // Forward axis (mm).
+    float y;   // Left axis (mm).
+    float z;   // Up axis (mm).
 } ik_target_t;
 
-/** Joint angles that satisfy a given IK target. */
+// Joint angles that satisfy a given IK target.
 typedef struct {
-    float base_rotation;    /**< Base turret rotation (degrees). */
-    float shoulder;         /**< Shoulder pitch (degrees). */
-    float elbow;            /**< Elbow pitch (degrees). */
-    bool  valid;            /**< True if the solution is within joint limits. */
+    float base_rotation;    // Base turret rotation (degrees).
+    float shoulder;         // Shoulder pitch (degrees).
+    float elbow;            // Elbow pitch (degrees).
+    bool  valid;            // True if the solution is within joint limits.
 } ik_solution_t;
 
 /* -------------------------------------------------------------------------- */
