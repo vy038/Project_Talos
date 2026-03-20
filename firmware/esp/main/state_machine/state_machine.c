@@ -133,7 +133,7 @@ static void handle_align(void) {
         return;
     }
 
-    // calculate cireciton of ball rel to center
+    // calculate direction of ball rel to center
     int center_offset = (int)last_detection.ball_x - (CAM_FRAME_WIDTH / 2);
 
     if (abs(center_offset) < BALL_CENTER_TOLERANCE_X) {
@@ -142,17 +142,28 @@ static void handle_align(void) {
         return;
     }
 
+    // scale turn speed down as ball gets closer (larger radius = closer)
+    float proximity = (float)last_detection.ball_radius / (float)BALL_CLOSE_RADIUS_PX;
+    if (proximity > 1.0f) proximity = 1.0f;
+    float turn_speed = 0.3f - (0.2f * proximity);  // 0.3 when far, 0.08 when close
+    if (turn_speed < 0.08f) turn_speed = 0.08f;
+
     // direction to move in
     if (center_offset > 0) {
-        vGaitSetCommand(MOVE_TURN_RIGHT, 0.25f);
+        vGaitSetCommand(MOVE_TURN_RIGHT, turn_speed);
     } else {
-        vGaitSetCommand(MOVE_TURN_LEFT, 0.25f);
+        vGaitSetCommand(MOVE_TURN_LEFT, turn_speed);
     }
 }
 
 static void handle_approach(void) {
-    // walking towards object while keeping it centered
-    vGaitSetCommand(MOVE_FORWARD, 0.4f);
+    // scale walk speed down as ball gets closer (larger radius = closer)
+    float proximity = (float)last_detection.ball_radius / (float)BALL_CLOSE_RADIUS_PX;
+    if (proximity > 1.0f) proximity = 1.0f;
+    float walk_speed = 0.5f - (0.35f * proximity);  // 0.5 when far, 0.15 when close
+    if (walk_speed < 0.1f) walk_speed = 0.1f;
+
+    vGaitSetCommand(MOVE_FORWARD, walk_speed);
 
     if (!last_detection.fresh) {
         if (ms_in_state() > 3000) {
@@ -165,7 +176,7 @@ static void handle_approach(void) {
 
     last_detection.fresh = false;
 
-    // if not in camera fram anymore, look for it
+    // if not in camera frame anymore, look for it
     if (!last_detection.detected) {
         vGaitSetCommand(MOVE_STOP, 0);
         transition(STATE_SEARCH);
@@ -179,7 +190,7 @@ static void handle_approach(void) {
         return;
     }
 
-    // if closer enough, transition to grab state
+    // if close enough, transition to grab state
     if (last_detection.ball_radius >= BALL_CLOSE_RADIUS_PX) {
         ESP_LOGI(TAG, "Ball within reach (radius=%d px)", last_detection.ball_radius);
         vGaitSetCommand(MOVE_STOP, 0);
