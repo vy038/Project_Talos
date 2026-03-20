@@ -1,4 +1,4 @@
-# Project Talos
+# Project Talos (WIP)
 
 Scorpion-style hexapod robot with a 3-DOF arm and computer vision. Wanted to build something that required real-time control, inverse kinematics, and vision processing on embedded hardware. Runs on dual ESP32s (WROOM for motors, S3 for camera) with bare metal C and FreeRTOS.
 
