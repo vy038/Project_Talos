@@ -51,17 +51,39 @@
 #define NUM_LEGS    6
 #define DOF_PER_LEG 2
 
-// TODO: set these by manually moving servos to neutral and recording angles
-#define HIP_NEUTRAL_DEG     90      // hip centered = leg straight out
-#define KNEE_NEUTRAL_DEG    90      // comfortable standing height
+#define HIP_NEUTRAL_DEG     90      // reference neutral used by compute_leg() — do not change
+#define KNEE_NEUTRAL_DEG    90      // reference neutral used by compute_leg() — do not change
 
-#define HIP_STRIDE_DEG      60      // hip swing amplitude (degrees). start small.
+// Per-leg knee neutral positions (degrees).
+// compute_leg() is written against KNEE_NEUTRAL_DEG=90. Each value here shifts
+// the whole leg up/down from that reference — stance height, lift, everything
+// moves together. Calibrate with TEST_KNEE_CALIB: note the angle where each
+// foot just touches the ground, then set that as the value below.
+#define KNEE_NEUTRAL_L0  103    // Leg 0: Front-Right  (knee ch12)
+#define KNEE_NEUTRAL_L1  112   // Leg 1: Mid-Right    (knee ch11)
+#define KNEE_NEUTRAL_L2  114   // Leg 2: Rear-Right   (knee ch10)
+#define KNEE_NEUTRAL_L3  67    // Leg 3: Rear-Left    (knee ch5)
+#define KNEE_NEUTRAL_L4  61    // Leg 4: Mid-Left     (knee ch4)
+#define KNEE_NEUTRAL_L5  61    // Leg 5: Front-Left   (knee ch3)
+
+// Per-leg hip neutral positions (degrees).
+// compute_leg() is written against HIP_NEUTRAL_DEG=90. Each value here shifts
+// the leg forward/back from that reference. Calibrate with TEST_KNEE_CALIB (hip
+// mode): note the angle where each hip is centered straight out, then set below.
+#define HIP_NEUTRAL_L0  110    // Leg 0: Front-Right  (hip ch15)
+#define HIP_NEUTRAL_L1  85    // Leg 1: Mid-Right    (hip ch14)
+#define HIP_NEUTRAL_L2  67    // Leg 2: Rear-Right   (hip ch13)
+#define HIP_NEUTRAL_L3  101    // Leg 3: Rear-Left    (hip ch2)
+#define HIP_NEUTRAL_L4  100    // Leg 4: Mid-Left     (hip ch1)
+#define HIP_NEUTRAL_L5  85    // Leg 5: Front-Left   (hip ch0)
+
+#define HIP_STRIDE_DEG      80      // hip swing amplitude (degrees). start small.
 #define KNEE_LIFT_DEG       25      // how high foot lifts during swing
 
 // #define HIP_STRIDE_DEG      10   // cut in half from 20
 // #define KNEE_LIFT_DEG       15   // cut in half from 25
 
-#define STEP_CYCLE_MS       800     // one complete step cycle (ms). 600-1000 typical.
+#define STEP_CYCLE_MS       600     // one complete step cycle (ms). 600-1000 typical.
 #define GAIT_UPDATE_MS      20      // update interval. matches 50Hz servo PWM.
 
 typedef enum {

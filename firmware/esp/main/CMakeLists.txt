@@ -8,6 +8,7 @@ idf_component_register(
          "../tests/test_power.c"
          "../tests/test_gait.c"
          "../tests/test_arm.c"
+         "../tests/test_knee_calibration.c"
          "locomotion/gait_generator.c"
          "locomotion/balance_control.c"
          "arm/arm_control.c"

@@ -42,6 +42,26 @@ static const uint8_t leg_channels[NUM_LEGS][DOF_PER_LEG] = {
     {0,  3},    // Leg 5: Front-Left   hip=ch0,  knee=ch3
 };
 
+// Per-leg knee neutral positions. Set values in gait_generator.h.
+static const float knee_neutral_deg[NUM_LEGS] = {
+    KNEE_NEUTRAL_L0,  // Leg 0: Front-Right
+    KNEE_NEUTRAL_L1,  // Leg 1: Mid-Right
+    KNEE_NEUTRAL_L2,  // Leg 2: Rear-Right
+    KNEE_NEUTRAL_L3,  // Leg 3: Rear-Left
+    KNEE_NEUTRAL_L4,  // Leg 4: Mid-Left
+    KNEE_NEUTRAL_L5,  // Leg 5: Front-Left
+};
+
+// Per-leg hip neutral positions. Set values in gait_generator.h.
+static const float hip_neutral_deg[NUM_LEGS] = {
+    HIP_NEUTRAL_L0,  // Leg 0: Front-Right
+    HIP_NEUTRAL_L1,  // Leg 1: Mid-Right
+    HIP_NEUTRAL_L2,  // Leg 2: Rear-Right
+    HIP_NEUTRAL_L3,  // Leg 3: Rear-Left
+    HIP_NEUTRAL_L4,  // Leg 4: Mid-Left
+    HIP_NEUTRAL_L5,  // Leg 5: Front-Left
+};
+
 // gait configs
 static const int8_t hip_direction[NUM_LEGS]  = {-1, -1, -1,  1,  1,  1};
 static const int8_t knee_direction[NUM_LEGS] = { 1,  1,  1, -1, -1, -1};
@@ -155,8 +175,8 @@ esp_err_t xGaitInit(void) {
 
     // set angles to neutral BEFORE first write to avoid servo jump from 0°
     for (int i = 0; i < NUM_LEGS; i++) {
-        current_angles.hip_angle[i]  = HIP_NEUTRAL_DEG;
-        current_angles.knee_angle[i] = KNEE_NEUTRAL_DEG;
+        current_angles.hip_angle[i]  = hip_neutral_deg[i];
+        current_angles.knee_angle[i] = knee_neutral_deg[i];
     }
     return xApplyAngles(&current_angles);
 }
@@ -230,6 +250,14 @@ esp_err_t xGaitUpdate(const float *knee_corrections) {
         compute_leg(leg_phase, duty, stride, leg_direction[i], hip_direction[i],
                     &current_angles.hip_angle[i], &current_angles.knee_angle[i]);
 
+        // flip knee lift direction for left-side legs (servos are mirrored)
+        float knee_dev = current_angles.knee_angle[i] - KNEE_NEUTRAL_DEG;
+        current_angles.knee_angle[i] = KNEE_NEUTRAL_DEG + knee_dev * knee_direction[i];
+
+        // shift to per-leg neutrals (compute_leg outputs relative to reference 90°)
+        current_angles.knee_angle[i] += (knee_neutral_deg[i] - KNEE_NEUTRAL_DEG);
+        current_angles.hip_angle[i]  += (hip_neutral_deg[i]  - HIP_NEUTRAL_DEG);
+
         if (knee_corrections != NULL) {
             current_angles.knee_angle[i] += knee_corrections[i] * knee_direction[i];
         }
@@ -249,21 +277,21 @@ esp_err_t xGaitStandNeutral(void) {
         for (int i = 0; i < NUM_LEGS; i++) {
             // graudally step towards neutral for all legs
             
-            float hip_err  = (float)HIP_NEUTRAL_DEG  - current_angles.hip_angle[i];
-            float knee_err = (float)KNEE_NEUTRAL_DEG - current_angles.knee_angle[i];
+            float hip_err  = hip_neutral_deg[i] - current_angles.hip_angle[i];
+            float knee_err = knee_neutral_deg[i] - current_angles.knee_angle[i];
 
             if (fabsf(hip_err) > NEUTRAL_STEP_DEG) {
                 current_angles.hip_angle[i]  += (hip_err  > 0.0f) ? NEUTRAL_STEP_DEG : -NEUTRAL_STEP_DEG;
                 still_moving = true;
             } else {
-                current_angles.hip_angle[i]  = HIP_NEUTRAL_DEG;
+                current_angles.hip_angle[i]  = hip_neutral_deg[i];
             }
 
             if (fabsf(knee_err) > NEUTRAL_STEP_DEG) {
                 current_angles.knee_angle[i] += (knee_err > 0.0f) ? NEUTRAL_STEP_DEG : -NEUTRAL_STEP_DEG;
                 still_moving = true;
             } else {
-                current_angles.knee_angle[i] = KNEE_NEUTRAL_DEG;
+                current_angles.knee_angle[i] = knee_neutral_deg[i];
             }
         }
 

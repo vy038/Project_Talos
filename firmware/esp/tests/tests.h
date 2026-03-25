@@ -31,6 +31,7 @@
 #define TEST_POWER              6
 #define TEST_GAIT               7
 #define TEST_ARM                8
+#define TEST_KNEE_CALIB         9
 
 /* ========================================================================== */
 /*  Test function declarations                                                 */
@@ -44,6 +45,7 @@ void test_uart(void);
 void test_power(void);
 void test_gait(void);
 void test_arm(void);
+void test_knee_calibration(void);
 
 /* ========================================================================== */
 /*  Test runner                                                                */
@@ -93,6 +95,10 @@ static inline void run_test(void) {
         case TEST_ARM:
             printf("[TEST] Arm Range-of-Motion\n");
             test_arm();
+            break;
+        case TEST_KNEE_CALIB:
+            printf("[TEST] Knee Ground-Touch Calibration\n");
+            test_knee_calibration();
             break;
         default:
             printf("[INFO] No test selected. Set TEST_SELECT in main.c\n");
