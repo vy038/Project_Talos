@@ -151,45 +151,118 @@ for (let i = 0; i < 6; i++) {
     });
 }
 
-// Arm
+// Arm link lengths — mirrored from ik_solver.h at 0.5 sim-units/mm scale
+const SIM_LINK1 = 50;           // ARM_LINK1_LENGTH 98mm
+const SIM_LINK2 = 70;           // ARM_LINK2_LENGTH 140mm
+const SIM_LINK3 = 45;           // ARM_LINK3_LENGTH 91mm (wrist-to-tip)
+const SIM_LINK1_OFFSET = 9;     // ARM_LINK1_OFFSET 18mm (right)
+const SIM_LINK2_OFFSET = -11;   // ARM_LINK2_OFFSET 21.39mm (left)
+const SIM_LINK3_OFFSET = -13;   // ARM_LINK3_OFFSET 26.83mm (down, approx -Z in arm frame)
+
+// Arm geometry
+// ARM_BASE_ANGLE=38°, LINK1=98mm, LINK2=140mm, LINK3=91mm
 const armBaseGroup = new THREE.Group();
 armBaseGroup.position.set(0, 8, 25);
-armBaseGroup.rotation.x = -Math.PI / 4;
+armBaseGroup.rotation.x = -(38 * Math.PI / 180);  // ARM_BASE_ANGLE
 body.add(armBaseGroup);
 
-const armBaseMesh = new THREE.Mesh(new THREE.CylinderGeometry(5, 5, 8, 8), armMat);
+// Turret cylinder (base rotation joint)
+const armBaseMesh = new THREE.Mesh(new THREE.CylinderGeometry(5, 5, 10, 8), armMat);
 armBaseGroup.add(armBaseMesh);
 
+// Shoulder pitch group
 const shoulderGroup = new THREE.Group();
-shoulderGroup.position.y = 4;
+shoulderGroup.position.y = 5;
 armBaseGroup.add(shoulderGroup);
 
-const shoulderMesh = new THREE.Mesh(new THREE.BoxGeometry(6, 90, 6), armMat);
-shoulderMesh.position.y = 45;
+// Shoulder link — straight segment along Y
+const shoulderMesh = new THREE.Mesh(new THREE.BoxGeometry(6, SIM_LINK1, 6), armMat);
+shoulderMesh.position.y = SIM_LINK1 / 2;
 shoulderGroup.add(shoulderMesh);
 
+// Connector: small horizontal box bridging shoulder top to elbow pivot
+const shoulderConnector = new THREE.Mesh(
+    new THREE.BoxGeometry(Math.abs(SIM_LINK1_OFFSET) + 6, 6, 6), armMat);
+shoulderConnector.position.set(SIM_LINK1_OFFSET / 2, SIM_LINK1, 0);
+shoulderGroup.add(shoulderConnector);
+
+// Elbow pitch group (offset right by ARM_LINK1_OFFSET)
 const elbowGroup = new THREE.Group();
-elbowGroup.position.y = 90;
+elbowGroup.position.set(SIM_LINK1_OFFSET, SIM_LINK1, 0);
 shoulderGroup.add(elbowGroup);
 
 const elbowJoint = new THREE.Mesh(new THREE.SphereGeometry(4, 8, 8), jointMat);
 elbowGroup.add(elbowJoint);
 
-const forearmMesh = new THREE.Mesh(new THREE.BoxGeometry(5, 75, 5), armMat);
-forearmMesh.position.y = 37.5;
+// Forearm link — straight segment along Y
+const forearmMesh = new THREE.Mesh(new THREE.BoxGeometry(5, SIM_LINK2, 5), armMat);
+forearmMesh.position.y = SIM_LINK2 / 2;
 elbowGroup.add(forearmMesh);
 
+// Connector: small horizontal box bridging forearm top to wrist pivot
+const forearmConnector = new THREE.Mesh(
+    new THREE.BoxGeometry(Math.abs(SIM_LINK2_OFFSET) + 5, 5, 5), armMat);
+forearmConnector.position.set(SIM_LINK2_OFFSET / 2, SIM_LINK2, 0);
+elbowGroup.add(forearmConnector);
+
+// Wrist group at end of forearm (offset left by ARM_LINK2_OFFSET)
+const wristGroup = new THREE.Group();
+wristGroup.position.set(SIM_LINK2_OFFSET, SIM_LINK2, 0);
+elbowGroup.add(wristGroup);
+
+const wristJoint = new THREE.Mesh(new THREE.SphereGeometry(3, 8, 8), jointMat);
+wristGroup.add(wristJoint);
+
+// Wrist shaft — straight along Y
+const wristShaftLen = 20;
+const gripperOffsetZ = -SIM_LINK3_OFFSET;  // flip: offset downward in arm plane
+const wristShaftMesh = new THREE.Mesh(new THREE.BoxGeometry(4, wristShaftLen, 4), armMat);
+wristShaftMesh.position.y = wristShaftLen / 2;
+wristGroup.add(wristShaftMesh);
+
+// Connector: small box bridging shaft end to gripper mount (perpendicular offset)
+const wristConnector = new THREE.Mesh(
+    new THREE.BoxGeometry(4, 4, Math.abs(gripperOffsetZ) + 4), armMat);
+wristConnector.position.set(0, wristShaftLen, gripperOffsetZ / 2);
+wristGroup.add(wristConnector);
+
+// Gripper mount group (offset downward from wrist)
 const gripperGroup = new THREE.Group();
-gripperGroup.position.y = 75;
-elbowGroup.add(gripperGroup);
+gripperGroup.position.set(0, wristShaftLen, gripperOffsetZ);
+wristGroup.add(gripperGroup);
 
-const gripL = new THREE.Mesh(new THREE.BoxGeometry(2, 10, 2), gripperMat);
-gripL.position.set(-4, 5, 0);
+// Horizontal mount bar between the two fingers
+const gripMountMesh = new THREE.Mesh(new THREE.BoxGeometry(22, 4, 4), armMat);
+gripperGroup.add(gripMountMesh);
+
+// Left jaw — pivots around Z axis to open/close
+const gripL = new THREE.Group();
+gripL.position.set(-8, 0, 0);
 gripperGroup.add(gripL);
+const gripLPalm = new THREE.Mesh(new THREE.BoxGeometry(4, 18, 4), gripperMat);
+gripLPalm.position.y = 9;
+gripL.add(gripLPalm);
+const gripLTip = new THREE.Mesh(new THREE.BoxGeometry(3, 12, 3), gripperMat);
+gripLTip.position.set(4, 21, 0);
+gripLTip.rotation.z = -0.5;
+gripL.add(gripLTip);
 
-const gripR = new THREE.Mesh(new THREE.BoxGeometry(2, 10, 2), gripperMat);
-gripR.position.set(4, 5, 0);
+// Right jaw — mirror of left
+const gripR = new THREE.Group();
+gripR.position.set(8, 0, 0);
 gripperGroup.add(gripR);
+const gripRPalm = new THREE.Mesh(new THREE.BoxGeometry(4, 18, 4), gripperMat);
+gripRPalm.position.y = 9;
+gripR.add(gripRPalm);
+const gripRTip = new THREE.Mesh(new THREE.BoxGeometry(3, 12, 3), gripperMat);
+gripRTip.position.set(-4, 21, 0);
+gripRTip.rotation.z = 0.5;
+gripR.add(gripRTip);
+
+// Invisible marker at gripper tip center (between jaw tips) for IK targeting
+const gripTipMarker = new THREE.Object3D();
+gripTipMarker.position.y = 21;
+gripperGroup.add(gripTipMarker);
 
 
 // ============================================================================
@@ -392,9 +465,6 @@ let camTickCounter = 0;
 // IK Cursor Gizmo
 // ============================================================================
 
-const SIM_LINK1 = 90;
-const SIM_LINK2 = 75;
-
 const ikCursorMat = new THREE.MeshPhongMaterial({ color: 0x00ffff, emissive: 0x003333, transparent: true, opacity: 0.9 });
 const ikCursorMesh = new THREE.Mesh(new THREE.SphereGeometry(3, 10, 10), ikCursorMat);
 ikCursorMesh.visible = false;
@@ -455,16 +525,29 @@ workspaceSphere.visible = false;
 scene.add(workspaceSphere);
 
 // IK Solver — uses Three.js Matrix4 to properly account for arm mount transform
-// (body position/yaw, arm offset, 45° tilt, +PI base offset, +60° elbow bias)
+// (body position/yaw, arm offset, 38° tilt, +PI base offset, +60° elbow bias)
+// cursorWorld = desired GRIPPER TIP position in world space.
+// We use the current tip-to-wrist 3D offset from the scene graph to find where
+// the wrist needs to be, then solve the 2-link IK for that wrist target.
+const _ikTipW = new THREE.Vector3();
+const _ikWristW = new THREE.Vector3();
+
 function ikSolveFromWorld(cursorWorld) {
+    // Get current tip-to-wrist offset from scene graph (depends on arm pose)
+    gripTipMarker.getWorldPosition(_ikTipW);
+    wristGroup.getWorldPosition(_ikWristW);
+    const tipToWrist = _ikWristW.clone().sub(_ikTipW);
+
+    // Desired wrist position = desired tip position + offset
+    const wristTarget = cursorWorld.clone().add(tipToWrist);
+
     // Build static arm mount matrix: body transform * arm offset * tilt
-    // This does NOT include any servo rotations — just the fixed geometry
     const bodyMatrix = new THREE.Matrix4();
     bodyMatrix.makeRotationY(robotPos.yaw);
     bodyMatrix.setPosition(body.position.x, body.position.y, body.position.z);
 
     const armOffsetMatrix = new THREE.Matrix4();
-    const tiltMatrix = new THREE.Matrix4().makeRotationX(-Math.PI / 4);
+    const tiltMatrix = new THREE.Matrix4().makeRotationX(-(38 * Math.PI / 180));  // ARM_BASE_ANGLE
     const transMatrix = new THREE.Matrix4().makeTranslation(0, 8, 25);
     armOffsetMatrix.multiplyMatrices(transMatrix, tiltMatrix);
 
@@ -473,14 +556,12 @@ function ikSolveFromWorld(cursorWorld) {
 
     // Invert to transform world → arm-local (pre-servo) space
     const invMount = mountMatrix.clone().invert();
-    const local = cursorWorld.clone().applyMatrix4(invMount);
+    const local = wristTarget.applyMatrix4(invMount);
 
-    // Subtract shoulder pivot offset (shoulderGroup is at y=4 in armBaseGroup)
-    local.y -= 4;
+    // Subtract shoulder pivot offset (shoulderGroup is at y=5 in armBaseGroup)
+    local.y -= 5;
 
     // Base servo angle from XZ plane in arm-local space
-    // rotation.y = (base - 90) * PI/180 + PI, so pointing at (lx, lz):
-    // rotation.y = atan2(lx, lz), therefore base = (atan2(lx,lz) - PI) * 180/PI + 90
     let baseDeg = (Math.atan2(local.x, local.z) - Math.PI) * 180 / Math.PI + 90;
     if (baseDeg < 0) baseDeg += 360;
     baseDeg = Math.max(0, Math.min(180, baseDeg));
@@ -494,22 +575,16 @@ function ikSolveFromWorld(cursorWorld) {
         return null; // unreachable
     }
 
-    // 2-link planar IK in the (radial, height) plane
-    // Interior elbow angle γ via law of cosines
+    // 2-link planar IK in the (radial, height) plane for wrist position
     const cosGamma = (SIM_LINK1 * SIM_LINK1 + SIM_LINK2 * SIM_LINK2 - dist * dist) / (2 * SIM_LINK1 * SIM_LINK2);
     const gamma = Math.acos(Math.max(-1, Math.min(1, cosGamma)));
 
-    // Shoulder triangle offset β
     const cosBeta = (SIM_LINK1 * SIM_LINK1 + dist * dist - SIM_LINK2 * SIM_LINK2) / (2 * SIM_LINK1 * dist);
     const beta = Math.acos(Math.max(-1, Math.min(1, cosBeta)));
 
-    // Shoulder geometric angle from +Y axis toward radial (elbow-up solution)
     const shoulderRad = Math.atan2(r, h) - beta;
-    // Map to servo: shoulderRad = (servo - 90) * PI/180
     const shoulderDeg = shoulderRad * 180 / Math.PI + 90;
 
-    // Elbow bend = PI - γ
-    // Map to servo: (servo - 90 + 60) * PI/180 = PI - γ → servo = (PI - γ) * 180/PI + 30
     const elbowDeg = (Math.PI - gamma) * 180 / Math.PI + 30;
 
     return {
@@ -543,12 +618,23 @@ setTimeout(onResize, 100);
 // State management
 // ============================================================================
 
+// Per-leg calibrated neutral positions (mirrors gait_generator.h).
+// These are the raw servo angles that correspond to the physical neutral stance.
+// Rendering computes (angle - neutral) so the sim shows 0-offset at neutral,
+// regardless of each leg's physical calibration offset.
+const HIP_NEUTRAL  = [110, 85, 67, 101, 100, 85];   // L0-L5 (from HIP_NEUTRAL_L*)
+const KNEE_NEUTRAL = [103, 112, 114, 67, 61, 61];   // L0-L5 (from KNEE_NEUTRAL_L*)
+
+// Firmware knee direction table: right legs +1, left legs -1.
+// Determines which direction from neutral means "lift" in servo space.
+const KNEE_DIR = [1, 1, 1, -1, -1, -1];
+
 let latestState = null;
 SimState.onUpdate((state) => { latestState = state; });
 
 const smoothed = {
-    hip: [90, 90, 90, 90, 90, 90],
-    knee: [90, 90, 90, 90, 90, 90],
+    hip: [...HIP_NEUTRAL],
+    knee: [...KNEE_NEUTRAL],
     arm: { base: 90, shoulder: 90, elbow: 90, gripper: 0 }
 };
 
@@ -619,31 +705,34 @@ function generateGaitAngles() {
         //   turn_right: right dir=-1, left dir=+1, combined with hip_dir gives SAME hip for all
         const hipDir = i < 3 ? -1 : 1;   // firmware hip_direction table
 
+        // Knee lift direction: right legs lift below neutral, left legs above
+        const kneeDir = KNEE_DIR[i];  // +1 right, -1 left
+        const kneeLift = -25 * kneeDir;  // servo deviation for "lift"
+
         if (gc.command === 'forward' || gc.command === 'backward') {
             const dir = gc.command === 'forward' ? 1 : -1;
             const netDir = dir * hipDir;
             if (isSwing) {
-                hip[i] = 90 + netDir * sweepRange * (subPhase * 2 - 1);
-                knee[i] = 65;  // lifted (uniform, matches firmware)
+                hip[i] = HIP_NEUTRAL[i] + netDir * sweepRange * (subPhase * 2 - 1);
+                knee[i] = KNEE_NEUTRAL[i] + kneeLift;  // lifted
             } else {
-                hip[i] = 90 + netDir * sweepRange * (1 - subPhase * 2);
-                knee[i] = 90;  // stance (uniform, matches firmware)
+                hip[i] = HIP_NEUTRAL[i] + netDir * sweepRange * (1 - subPhase * 2);
+                knee[i] = KNEE_NEUTRAL[i];  // stance
             }
         } else if (gc.command === 'turn_left' || gc.command === 'turn_right') {
-            // For turning, direction per side: turn_right = right:-1, left:+1
             const turnBase = gc.command === 'turn_right' ? -1 : 1;
             const legDir = i < 3 ? turnBase : -turnBase;
             const netDir = legDir * hipDir;
             if (isSwing) {
-                hip[i] = 90 + netDir * sweepRange * (subPhase * 2 - 1);
-                knee[i] = 65;
+                hip[i] = HIP_NEUTRAL[i] + netDir * sweepRange * (subPhase * 2 - 1);
+                knee[i] = KNEE_NEUTRAL[i] + kneeLift;
             } else {
-                hip[i] = 90 + netDir * sweepRange * (1 - subPhase * 2);
-                knee[i] = 90;
+                hip[i] = HIP_NEUTRAL[i] + netDir * sweepRange * (1 - subPhase * 2);
+                knee[i] = KNEE_NEUTRAL[i];
             }
         } else {
-            hip[i] = 90;
-            knee[i] = 90;
+            hip[i] = HIP_NEUTRAL[i];
+            knee[i] = KNEE_NEUTRAL[i];
         }
     }
 
@@ -678,8 +767,11 @@ function updateRobot(state) {
             const hipAngle = smoothed.hip[i];
             const kneeAngle = smoothed.knee[i];
 
-            // Odometry — firmware knee values are uniform (swing ≈ 65, stance ≈ 90)
-            const isSwing = kneeAngle < 85;
+            // Odometry — swing when knee deviates from neutral in the "lift" direction.
+            // Right legs (KNEE_DIR=+1): lift = below neutral (deviation negative).
+            // Left legs  (KNEE_DIR=-1): lift = above neutral (deviation positive).
+            const kneeDev = (kneeAngle - KNEE_NEUTRAL[i]) * KNEE_DIR[i];
+            const isSwing = kneeDev < -5;
             if (!isSwing && lastLegs) {
                 const prevHipAngle = lastLegs.hip[i];
                 let dAngleDeg = hipAngle - prevHipAngle;
@@ -696,12 +788,13 @@ function updateRobot(state) {
                 }
             }
 
-            // Hip: negate offset to match physical servo mounting direction
-            const hipOffset = (hipAngle - 90) * Math.PI / 180;
+            // Hip: render as delta from calibrated neutral so neutral pose looks flat
+            const hipOffset = (hipAngle - HIP_NEUTRAL[i]) * Math.PI / 180;
             leg.hipGroup.rotation.y = leg.baseAngle - hipOffset;
 
-            // Knee: firmware sends uniform values; hipGroup PI rotation handles L/R mirroring
-            const kneeRad = -(kneeAngle - 90 + 35) * Math.PI / 180;
+            // Knee: delta from calibrated neutral, normalized by knee direction,
+            // plus geometry offset. KNEE_DIR accounts for left/right mirroring.
+            const kneeRad = -((kneeAngle - KNEE_NEUTRAL[i]) * KNEE_DIR[i] + 35) * Math.PI / 180;
             leg.kneeGroup.rotation.z = kneeRad;
 
             const staticFlare = 0.65;
@@ -752,12 +845,12 @@ function updateRobot(state) {
         ? { base: window.ArmControl.base, shoulder: window.ArmControl.shoulder, elbow: window.ArmControl.elbow, gripper: window.ArmControl.gripper }
         : (window.IKCursor.active ? null : state.arm);
 
-    // IK cursor: continuously track gripper when active and not dragging
+    // IK cursor: track gripper tip when active and not dragging
     if (window.IKCursor.active && !window.IKCursor.dragging) {
-        const gripWorld = new THREE.Vector3();
-        gripperGroup.getWorldPosition(gripWorld);
-        ikCursorMesh.position.copy(gripWorld);
-        window.IKCursor.worldPos.copy(gripWorld);
+        const tipWorld = new THREE.Vector3();
+        gripTipMarker.getWorldPosition(tipWorld);
+        ikCursorMesh.position.copy(tipWorld);
+        window.IKCursor.worldPos.copy(tipWorld);
     }
 
     if (armSource) {
@@ -776,10 +869,11 @@ function updateRobot(state) {
     const elbowRad = (smoothed.arm.elbow - 90 + 60) * Math.PI / 180;
     elbowGroup.rotation.x = elbowRad;
 
-    const gripAngle = smoothed.arm.gripper / 180;
-    const spread = 2 + gripAngle * 6;
-    gripL.position.x = -spread;
-    gripR.position.x = spread;
+    // Jaw open/close: rotate finger groups around Z. 0°=closed, 140°=fully open.
+    const jawOpen = Math.max(0, Math.min(1, smoothed.arm.gripper / 140));
+    const jawRot = jawOpen * 0.45;
+    gripL.rotation.z = jawRot;
+    gripR.rotation.z = -jawRot;
 
     window.ArmControl.currentBase = smoothed.arm.base;
     window.ArmControl.currentShoulder = smoothed.arm.shoulder;
@@ -910,8 +1004,9 @@ for (const leg of legs) {
 createRobotCollider(armBaseMesh);
 createRobotCollider(shoulderMesh);
 createRobotCollider(forearmMesh);
-createRobotCollider(gripL);
-createRobotCollider(gripR);
+createRobotCollider(wristShaftMesh);
+createRobotCollider(gripLPalm);
+createRobotCollider(gripRPalm);
 
 // Camera collider
 createRobotCollider(camBoxMesh, 6);
@@ -975,6 +1070,37 @@ window.PhysicsBall = {
     }
 };
 
+// Ball grab state
+let ballGrabbed = false;
+const _grabTipW = new THREE.Vector3();
+const _grabMountW = new THREE.Vector3();
+const _grabCenter = new THREE.Vector3();
+const _grabBallV = new THREE.Vector3();
+
+function updateBallGrab() {
+    gripTipMarker.getWorldPosition(_grabTipW);
+    gripperGroup.getWorldPosition(_grabMountW);
+    _grabCenter.lerpVectors(_grabMountW, _grabTipW, 0.5);
+
+    const ballPos = _grabBallV.set(ballBody.position.x, ballBody.position.y, ballBody.position.z);
+    const distToGrab = ballPos.distanceTo(_grabCenter);
+    const jawOpen = Math.max(0, Math.min(1, smoothed.arm.gripper / 140));
+
+    if (ballGrabbed) {
+        // Hold ball at gripper center
+        ballBody.position.set(_grabCenter.x, _grabCenter.y, _grabCenter.z);
+        ballBody.velocity.set(0, 0, 0);
+        ballBody.angularVelocity = new Vec3();
+        // Release if jaws open wide enough
+        if (jawOpen > 0.5) ballGrabbed = false;
+    } else {
+        // Grab if ball is within jaw envelope and jaws are mostly closed
+        if (distToGrab < ballRadius + 10 && jawOpen < 0.25) {
+            ballGrabbed = true;
+        }
+    }
+}
+
 // Step physics and sync Three.js visuals
 function updatePhysics() {
     if (!window.PhysicsBall.active) return;
@@ -985,7 +1111,15 @@ function updatePhysics() {
         // While dragging, freeze physics — just sync mesh
         ballBody.velocity.set(0, 0, 0);
         ballMesh.position.set(ballBody.position.x, ballBody.position.y, ballBody.position.z);
+        ballGrabbed = false;
         return;
+    }
+
+    // Check grab/release before physics step
+    updateBallGrab();
+    if (ballGrabbed) {
+        ballMesh.position.set(ballBody.position.x, ballBody.position.y, ballBody.position.z);
+        return;  // skip physics while grabbed
     }
 
     // Update kinematic robot colliders from Three.js world transforms
@@ -1210,8 +1344,8 @@ window.resetRobotPosition = function() {
     robotPos.yaw = 0;
     lastLegs = null;
     for (let i = 0; i < 6; i++) {
-        smoothed.hip[i] = 90;
-        smoothed.knee[i] = 90;
+        smoothed.hip[i] = HIP_NEUTRAL[i];
+        smoothed.knee[i] = KNEE_NEUTRAL[i];
     }
     smoothed.arm.base = 90;
     smoothed.arm.shoulder = 90;
