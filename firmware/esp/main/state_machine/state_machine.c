@@ -50,14 +50,6 @@ static const arm_angles_t arm_lifted = {
     .gripper  = 0.0f,
 };
 
-static void power_event_handler(power_status_t status, float current) {
-    // force transition to EMERGENCY if power is critical
-    if (status == POWER_EMERGENCY) {
-        ESP_LOGE(TAG, "POWER EMERGENCY: %.2fA - forcing emergency state", current);
-        vStateMachineForceState(STATE_EMERGENCY);
-    }
-}
-
 static void handle_init(void) {
     // starting state
     transition(STATE_CALIBRATE);
@@ -284,8 +276,6 @@ esp_err_t xStateMachineInit(void) {
     current_state = STATE_INIT;
     state_enter_time = esp_timer_get_time();
     memset(&last_detection, 0, sizeof(last_detection));
-    vPowerSetCallback(power_event_handler);
-
     ESP_LOGI(TAG, "State machine initialized");
     return ESP_OK;
 }
