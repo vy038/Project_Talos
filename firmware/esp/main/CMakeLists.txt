@@ -22,5 +22,5 @@ idf_component_register(
          "tasks/power_mon_task.c"
          "tasks/uart_cam_task.c"
     INCLUDE_DIRS "." "../tests" "locomotion" "arm" "uart_protocol" "state_machine" "power" "tasks"
-    REQUIRES I2C servo MPU6050 ADC power_monitor UART
+    REQUIRES I2C servo MPU6050 ADC power_monitor UART esp_timer
 )
