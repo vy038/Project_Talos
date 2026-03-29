@@ -281,7 +281,7 @@ esp_err_t xStateMachineInit(void) {
 }
 
 esp_err_t xStateMachineUpdate(void) {
-    // update state machine, should be called in main loop, handles transitions and state actions\
+    // update state machine, should be called in main loop, handles transitions and state actions
 
     // checking for tipping over
     if (current_state != STATE_EMERGENCY && current_state != STATE_INIT) {
