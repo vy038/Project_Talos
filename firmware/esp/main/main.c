@@ -2,6 +2,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "i2c.h"
+#include "mpu6050.h"
 #include "uart.h"
 #include "power_monitor.h"
 #include "state_machine/state_machine.h"
@@ -53,17 +54,25 @@ void app_main(void) {
         return;
     }
 
+    // try to init MPU6050 — if not found, run without balance
+    bool mpu_available = (xMPU6050_init() == ESP_OK);
+    if (!mpu_available) {
+        printf("MPU6050 not detected — balance task disabled\n");
+    }
+
     if (TEST_SELECT != TEST_NONE) {
          run_test();
     }
 
     // make tasks
-    xTaskCreatePinnedToCore(vPowerMonTask, "power_mon", 2048, NULL, 1, NULL, 1);
-    xTaskCreatePinnedToCore(vUartCamTask, "uart_cam", 3072, NULL, 3, &xUartCamTaskHandle, 1);
-    xTaskCreatePinnedToCore(vGaitTask, "gait", 4096, NULL, 5, &xGaitTaskHandle, 1);
-    xTaskCreatePinnedToCore(vArmCtrlTask, "arm_ctrl",   4096, NULL, 6, NULL, 1);
-    xTaskCreatePinnedToCore(vBalanceTask, "balance", 3072, NULL, 5, NULL, 1);
-    xTaskCreatePinnedToCore(vStateMachineTask, "state_mach", 4096, NULL, 4, NULL, 1);
+    xTaskCreatePinnedToCore(vPowerMonTask,     "power_mon",  2048, NULL, 1, NULL,                   1);
+    xTaskCreatePinnedToCore(vUartCamTask,      "uart_cam",   3072, NULL, 3, &xUartCamTaskHandle,    1);
+    xTaskCreatePinnedToCore(vGaitTask,         "gait",       4096, NULL, 5, &xGaitTaskHandle,       1);
+    xTaskCreatePinnedToCore(vArmCtrlTask,      "arm_ctrl",   4096, NULL, 6, NULL,                   1);
+    if (mpu_available) {
+        xTaskCreatePinnedToCore(vBalanceTask,  "balance",    3072, NULL, 5, NULL,                   1);
+    }
+    xTaskCreatePinnedToCore(vStateMachineTask, "state_mach", 4096, NULL, 4, NULL,                   1);
 
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(1000));
