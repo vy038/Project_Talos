@@ -14,6 +14,13 @@ idf_component_register(
          "arm/arm_control.c"
          "arm/ik_solver.c"
          "uart_protocol/uart_protocol.c"
-    INCLUDE_DIRS "." "../tests" "locomotion" "arm" "uart_protocol"
+         "state_machine/state_machine.c"
+         "power/power_management.c"
+         "tasks/state_machine_task.c"
+         "tasks/gait_task.c"
+         "tasks/arm_ctrl_task.c"
+         "tasks/power_mon_task.c"
+         "tasks/uart_cam_task.c"
+    INCLUDE_DIRS "." "../tests" "locomotion" "arm" "uart_protocol" "state_machine" "power" "tasks"
     REQUIRES I2C servo MPU6050 ADC power_monitor UART
 )
