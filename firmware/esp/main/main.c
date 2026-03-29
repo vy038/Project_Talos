@@ -2,6 +2,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "i2c.h"
+#include "uart.h"
+#include "power_monitor.h"
 #include "state_machine/state_machine.h"
 #include "power/power_management.h"
 #include "tasks/task_config.h"
@@ -10,6 +12,7 @@
 #include "tasks/arm_ctrl_task.h"
 #include "tasks/power_mon_task.h"
 #include "tasks/uart_cam_task.h"
+#include "tasks/balance_task.h"
 
 // IPC object definitions (extern declared in task_config.h)
 QueueHandle_t xFrameQueue;
@@ -31,10 +34,22 @@ void app_main(void) {
     xArmSemaphore = xSemaphoreCreateBinary();
     xI2CMutex     = xSemaphoreCreateMutex();
 
-    // init i2c master
+    // init hardware peripherals before any task starts
     esp_err_t ret = xI2cMasterInit();
     if (ret != ESP_OK) {
         printf("I2C init failed: %s\n", esp_err_to_name(ret));
+        return;
+    }
+
+    ret = xUARTInit();
+    if (ret != ESP_OK) {
+        printf("UART init failed: %s\n", esp_err_to_name(ret));
+        return;
+    }
+
+    ret = xACS712Init();
+    if (ret != ESP_OK) {
+        printf("ACS712 init failed: %s\n", esp_err_to_name(ret));
         return;
     }
 
@@ -47,6 +62,7 @@ void app_main(void) {
     xTaskCreatePinnedToCore(vUartCamTask, "uart_cam", 3072, NULL, 3, &xUartCamTaskHandle, 1);
     xTaskCreatePinnedToCore(vGaitTask, "gait", 4096, NULL, 5, &xGaitTaskHandle, 1);
     xTaskCreatePinnedToCore(vArmCtrlTask, "arm_ctrl",   4096, NULL, 6, NULL, 1);
+    xTaskCreatePinnedToCore(vBalanceTask, "balance", 3072, NULL, 5, NULL, 1);
     xTaskCreatePinnedToCore(vStateMachineTask, "state_mach", 4096, NULL, 4, NULL, 1);
 
     while (1) {
