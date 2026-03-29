@@ -1,18 +1,24 @@
 // gait_task.c
 #include "gait_task.h"
 #include "task_config.h"
+#include "locomotion/gait_generator.h"
+#include "locomotion/balance_control.h"
 
 void vGaitTask(void *pvParams) {
+    // init gait generator
+    xGaitInit();
     TickType_t xLastWakeTime = xTaskGetTickCount();
+
     while (1) {
-        // TODO: await state machine command and call xGaitUpdate()
-        /*
-        gait update from state machine will update the gait speed and decision
+        // get corrections from balance control
+        balance_correction_t corrections = xBalanceGetCorrections();
 
-        it updates every 20ms in real time and takes updates,
-        keeps gait up at all times and just sends an update every 20 ms
-        */
+        // update gait generator with corrections, taking and giving i2c mutex as needed
+        xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+        xGaitUpdate(corrections.knee_offset);
+        xSemaphoreGive(xI2CMutex);
 
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(20));  // 20ms = GAIT_UPDATE_MS
+        // 20ms cycle
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(20));
     }
 }

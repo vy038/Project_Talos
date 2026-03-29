@@ -1,21 +1,25 @@
 // power_mon_task.c
 #include "power_mon_task.h"
 #include "task_config.h"
+#include "power/power_management.h"
 
 void vPowerMonTask(void *pvParams) {
+    // init power management
+    xPowerInit();
     TickType_t xLastWakeTime = xTaskGetTickCount();
+
     while (1) {
-        // TODO: read power monitor queue and call xPowerMonUpdate()
-        /*
-        will monitor power and then send power status to state machine via xPowerQueue
-        the state machine will then decide whether to trigger the arm or not based on the power status
+        // grab power status, check state,a nd send to state machine if necessary
+        power_status_t status = xPowerCheck();
+        // only sends for warning and emergencies
+        if (status == POWER_EMERGENCY) { // if emergency, set priority to max to send to state machine asap
+            xQueueSend(xPowerQueue, &status, 0);
+            vTaskPrioritySet(NULL, configMAX_PRIORITIES - 1);
+        } else if (status == POWER_WARNING) {
+            xQueueSend(xPowerQueue, &status, 0);
+        }
 
-        task might need to escalate priority if power problems emerge
-        and signal to state machine, state machine might need priority increase too
-        move the kill switch into this task instead?
-        can try directly calling vGaitSetCommand(MOVE_STOP, 0), but wont be as nice
-        */
-
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(20));  // 20ms = POWER_POLL_MS
+        // 20ms cycle
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(20));
     }
 }

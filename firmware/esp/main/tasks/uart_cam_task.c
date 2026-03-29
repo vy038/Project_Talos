@@ -1,37 +1,40 @@
 // uart_cam_task.c
 #include "uart_cam_task.h"
 #include "task_config.h"
+#include "uart_protocol/uart_protocol.h"
+#include "state_machine/state_machine.h"
+#include "uart.h"
 
 void vUartCamTask(void *pvParams) {
+    // creates frame and ping buffers
+    talos_framer_t framer = {0};
+    uint8_t ping = CAM_PING_BYTE; // 0xAA
+
     while (1) {
-        // frozen here until state_machine wakes
+        // waits for notification from state machine task that a new frame is needed
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
-        // TODO: logic + impliment "ping" signal to wake up esp32 s3
-        /*
-        once signal for ping is given (clock from state_machine's end cycle), 
-        this task wakes, then send ping to esp32 s3 to wake it from blocking
+        // sends ping to camera to request a frame
+        xUARTWrite(&ping, 1);
 
-        then it will wait for cam output,
-        then read the frame, decode the data,
-        then send the data to state_machine via queue (only 1 to prevent stale frames)
+        // reads the response from the camera with a timeout (200ms)
+        uint8_t rx[TALOS_PKT_LEN];
+        size_t bytes_read;
+        esp_err_t ret = xUARTReadTimeout(rx, TALOS_PKT_LEN, &bytes_read, 200);
+        if (ret != ESP_OK || bytes_read == 0) continue;
 
-        void vUARTProtoBuildDetection(uint8_t *buf, const talos_detection_t *det)
-        {
-            buf[0]  = TALOS_PKT_START0;
-            buf[1]  = TALOS_PKT_START1;
-            buf[2]  = TALOS_PKT_TYPE_DETECT;
-            buf[3]  = det->detected ? 1u : 0u;
-            buf[4]  = (uint8_t)((det->x >> 8) & 0xFF);
-            buf[5]  = (uint8_t)( det->x       & 0xFF);
-            buf[6]  = (uint8_t)((det->y >> 8) & 0xFF);
-            buf[7]  = (uint8_t)( det->y       & 0xFF);
-            buf[8]  = (uint8_t)((det->r >> 8) & 0xFF);
-            buf[9]  = (uint8_t)( det->r       & 0xFF);
-            buf[10] = compute_checksum(buf);
+        // feeds the received bytes into the frame queue to extract detection data
+        talos_detection_t td;
+        size_t consumed;
+        if (bUARTProtoFeedBuf(&framer, rx, bytes_read, &consumed, &td)) {
+            detection_result_t result = {
+                .detected    = td.detected,
+                .ball_x      = td.x,
+                .ball_y      = td.y,
+                .ball_radius = td.r,
+                .fresh       = true,
+            };
+            xQueueOverwrite(xFrameQueue, &result);
         }
-
-        use this (bUARTProtoFeedBuf) to decode the data from cam, then send the decoded data to state_machine via queue
-        */
     }
 }

@@ -4,20 +4,21 @@
 #include "arm/arm_control.h"
 
 void vArmCtrlTask(void *pvParams) {
+    // initialize arm control
     xArmControlInit();
+
     while (1) {
-        // frozen here until state_machine gives the semaphore
+        // wait for state machine to trigger arm control, will keep giving if arm controls state
         xSemaphoreTake(xArmSemaphore, portMAX_DELAY);
 
-        // TODO: logic
-        /*
-        once semaphore is given, arm_ctrl will execute the corresponding logic 
-        based on the current state of the state machine
+        while (1) {
+            // take i2c mutex and update arm, then releases it
+            xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+            xArmUpdate();
+            xSemaphoreGive(xI2CMutex);
 
-        it will take the coordinates given from the state machine,
-        then slowly with each call move the arm towards those coordinates
-        camera will continuously send commands to the state machine, and 
-        the state machine will update the coordinates for the arm in real time
-        */
+            // 20ms cycle time
+            vTaskDelay(pdMS_TO_TICKS(20));
+        }
     }
 }
