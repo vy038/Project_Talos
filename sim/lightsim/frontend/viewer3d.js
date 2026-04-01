@@ -853,7 +853,9 @@ function updateRobot(state) {
 
             const staticFlare = 0.65;
             const hipDiagTilt = 0.7;
-            leg.lowerShinGroup.rotation.z = -(kneeRad - 0.15 + hipDiagTilt + staticFlare);
+            // Constant relative bend (based on the original neutral knee pose of -35 degrees)
+            const neutralKneeRad = -35 * Math.PI / 180;
+            leg.lowerShinGroup.rotation.z = -(neutralKneeRad - 0.15 + hipDiagTilt + staticFlare);
 
             const mat = isSwing ? legSwingMat : legMat;
             leg.hipMesh1.material = mat;

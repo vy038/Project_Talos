@@ -43,8 +43,11 @@
             </div>
             <div class="topbar-divider"></div>
             <div id="panel-toggles">
+                <span class="tab-group-label">PANELS</span>
                 <button class="ptab active" data-panel="controls">CTRL</button>
                 <button class="ptab active" data-panel="debug">DEBUG</button>
+                <span class="tab-group-sep"></span>
+                <span class="tab-group-label">VIEW</span>
                 <button class="ptab active" data-panel="view3d">3D</button>
                 <button class="ptab" data-panel="view2d">2D</button>
                 <button class="ptab active" data-panel="viewcam">CAM</button>
@@ -89,129 +92,141 @@
                     <div class="pane-body">
 
                         <div class="ctrl-section">
-                            <div class="ctrl-title">SYSTEM</div>
-                            <div class="btn-row">
-                                <button id="btn-recompile" class="btn btn-full">Recompile &amp; Flash</button>
-                            </div>
-                            <div class="btn-row" style="margin-top:4px">
-                                <button id="btn-reset" class="btn btn-full btn-secondary">Reset to Neutral</button>
+                            <div class="ctrl-title collapsible" data-target="sec-system">SYSTEM</div>
+                            <div class="ctrl-section-body" id="sec-system">
+                                <div class="btn-row">
+                                    <button id="btn-recompile" class="btn btn-full">Recompile &amp; Flash</button>
+                                </div>
+                                <div class="btn-row" style="margin-top:4px">
+                                    <button id="btn-reset" class="btn btn-full btn-secondary">Reset to Neutral</button>
+                                </div>
                             </div>
                         </div>
 
                         <div class="ctrl-section">
-                            <div class="ctrl-title">MOVEMENT</div>
-                            <div class="dpad">
-                                <button class="dpad-btn" data-cmd="forward" title="Forward">FWD</button>
-                                <button class="dpad-btn" data-cmd="turn_left" title="Turn Left">L</button>
-                                <button class="dpad-btn" data-cmd="stop" title="Stop">STP</button>
-                                <button class="dpad-btn" data-cmd="turn_right" title="Turn Right">R</button>
-                                <button class="dpad-btn" data-cmd="backward" title="Backward">REV</button>
+                            <div class="ctrl-title collapsible" data-target="sec-ball">PHYSICS BALL</div>
+                            <div class="ctrl-section-body" id="sec-ball">
+                                <div class="btn-row">
+                                    <button class="btn btn-accent" id="btn-drop-ball">Drop</button>
+                                    <button class="btn" id="btn-reset-ball">Reset</button>
+                                </div>
+                                <label class="toggle-row">
+                                    <input type="checkbox" id="ball-place-mode">
+                                    <span>Click to Place</span>
+                                </label>
+                                <div id="ball-pos-readout" class="arm-readout" style="margin:3px 0;">pos: —</div>
+                                <div class="slider-group">
+                                    <div class="slider-row">
+                                        <label>X</label>
+                                        <input type="range" min="-200" max="200" value="0" id="ball-x-slider">
+                                        <span id="ball-x-val" class="slider-val">0</span>
+                                    </div>
+                                    <div class="slider-row">
+                                        <label>Y</label>
+                                        <input type="range" min="0" max="200" value="8" id="ball-y-slider">
+                                        <span id="ball-y-val" class="slider-val">8</span>
+                                    </div>
+                                    <div class="slider-row">
+                                        <label>Z</label>
+                                        <input type="range" min="-200" max="200" value="0" id="ball-z-slider">
+                                        <span id="ball-z-val" class="slider-val">0</span>
+                                    </div>
+                                </div>
+                                <button class="btn btn-full" id="btn-ball-setpos" style="margin-top:4px">Set Position</button>
+                                <p class="hint">Click-drag to throw. Shift+drag = height.</p>
                             </div>
-                            <div class="slider-row">
-                                <label>Speed</label>
-                                <input type="range" min="10" max="100" value="50" id="speed-slider"
-                                    oninput="document.getElementById('speed-val').textContent=this.value+'%'">
-                                <span id="speed-val" class="slider-val">50%</span>
-                            </div>
-                            <div class="slider-row">
-                                <label>Gait</label>
-                                <select id="gait-select" class="ctrl-select">
-                                    <option value="0">Tripod</option>
-                                    <option value="1">Wave</option>
-                                    <option value="2">Ripple</option>
+                        </div>
+
+                        <div class="ctrl-section">
+                            <div class="ctrl-title collapsible collapsed" data-target="sec-tests">TESTS</div>
+                            <div class="ctrl-section-body collapsed" id="sec-tests">
+                                <select id="test-select" class="ctrl-select" style="margin-bottom:6px; width:100%">
+                                    <option value="gait">All Gaits (cycle)</option>
+                                    <option value="tripod">Tripod Only</option>
+                                    <option value="wave">Wave Only</option>
+                                    <option value="ripple">Ripple Only</option>
+                                    <option value="arm">Arm Sweep</option>
                                 </select>
+                                <button id="btn-run-test" class="btn btn-full">Run Test</button>
                             </div>
                         </div>
 
                         <div class="ctrl-section">
-                            <div class="ctrl-title">TIME SCALE</div>
-                            <div class="slider-row">
-                                <label>Scale</label>
-                                <input type="range" min="10" max="300" value="100" id="timescale-slider"
-                                    oninput="window.TimeScale=this.value/100; document.getElementById('timescale-val').textContent=window.TimeScale.toFixed(1)+'x'; document.getElementById('timescale-label').textContent=window.TimeScale.toFixed(1)+'x';">
-                                <span id="timescale-val" class="slider-val">1.0x</span>
+                            <div class="ctrl-title collapsible collapsed" data-target="sec-arm">ARM CONTROL</div>
+                            <div class="ctrl-section-body collapsed" id="sec-arm">
+                                <label class="toggle-row">
+                                    <input type="checkbox" id="arm-override-toggle">
+                                    <span>Manual Override</span>
+                                </label>
+                                <div class="slider-group">
+                                    <div class="slider-row">
+                                        <label>Base</label>
+                                        <input type="range" min="0" max="180" value="90" id="arm-base-slider">
+                                        <span id="arm-base-val" class="slider-val">90</span>
+                                    </div>
+                                    <div class="slider-row">
+                                        <label>Shoulder</label>
+                                        <input type="range" min="0" max="180" value="90" id="arm-shoulder-slider">
+                                        <span id="arm-shoulder-val" class="slider-val">90</span>
+                                    </div>
+                                    <div class="slider-row">
+                                        <label>Elbow</label>
+                                        <input type="range" min="0" max="180" value="90" id="arm-elbow-slider">
+                                        <span id="arm-elbow-val" class="slider-val">90</span>
+                                    </div>
+                                    <div class="slider-row">
+                                        <label>Gripper</label>
+                                        <input type="range" min="0" max="180" value="0" id="arm-gripper-slider">
+                                        <span id="arm-gripper-val" class="slider-val">0</span>
+                                    </div>
+                                </div>
+                                <div id="arm-readout" class="arm-readout"></div>
+                                <div class="section-divider"></div>
+                                <label class="toggle-row">
+                                    <input type="checkbox" id="ik-mode-toggle">
+                                    <span>IK Cursor Mode</span>
+                                </label>
+                                <div id="ik-readout" class="arm-readout ik-readout"></div>
                             </div>
                         </div>
 
                         <div class="ctrl-section">
-                            <div class="ctrl-title">TESTS</div>
-                            <select id="test-select" class="ctrl-select" style="margin-bottom:6px; width:100%">
-                                <option value="gait">All Gaits (cycle)</option>
-                                <option value="tripod">Tripod Only</option>
-                                <option value="wave">Wave Only</option>
-                                <option value="ripple">Ripple Only</option>
-                                <option value="arm">Arm Sweep</option>
-                            </select>
-                            <button id="btn-run-test" class="btn btn-full">Run Test</button>
+                            <div class="ctrl-title collapsible collapsed" data-target="sec-timescale">TIME SCALE</div>
+                            <div class="ctrl-section-body collapsed" id="sec-timescale">
+                                <div class="slider-row">
+                                    <label>Scale</label>
+                                    <input type="range" min="10" max="300" value="100" id="timescale-slider"
+                                        oninput="window.TimeScale=this.value/100; document.getElementById('timescale-val').textContent=window.TimeScale.toFixed(1)+'x'; document.getElementById('timescale-label').textContent=window.TimeScale.toFixed(1)+'x';">
+                                    <span id="timescale-val" class="slider-val">1.0x</span>
+                                </div>
+                            </div>
                         </div>
 
                         <div class="ctrl-section">
-                            <div class="ctrl-title">PHYSICS BALL</div>
-                            <div class="btn-row">
-                                <button class="btn btn-accent" id="btn-drop-ball">Drop</button>
-                                <button class="btn" id="btn-reset-ball">Reset</button>
-                            </div>
-                            <label class="toggle-row">
-                                <input type="checkbox" id="ball-place-mode">
-                                <span>Click to Place</span>
-                            </label>
-                            <div id="ball-pos-readout" class="arm-readout" style="margin:3px 0;">pos: —</div>
-                            <div class="slider-group">
-                                <div class="slider-row">
-                                    <label>X</label>
-                                    <input type="range" min="-200" max="200" value="0" id="ball-x-slider">
-                                    <span id="ball-x-val" class="slider-val">0</span>
+                            <div class="ctrl-title collapsible collapsed" data-target="sec-movement">MOVEMENT</div>
+                            <div class="ctrl-section-body collapsed" id="sec-movement">
+                                <div class="dpad">
+                                    <button class="dpad-btn" data-cmd="forward" title="Forward">FWD</button>
+                                    <button class="dpad-btn" data-cmd="turn_left" title="Turn Left">L</button>
+                                    <button class="dpad-btn" data-cmd="stop" title="Stop">STP</button>
+                                    <button class="dpad-btn" data-cmd="turn_right" title="Turn Right">R</button>
+                                    <button class="dpad-btn" data-cmd="backward" title="Backward">REV</button>
                                 </div>
                                 <div class="slider-row">
-                                    <label>Y</label>
-                                    <input type="range" min="0" max="200" value="8" id="ball-y-slider">
-                                    <span id="ball-y-val" class="slider-val">8</span>
+                                    <label>Speed</label>
+                                    <input type="range" min="10" max="100" value="50" id="speed-slider"
+                                        oninput="document.getElementById('speed-val').textContent=this.value+'%'">
+                                    <span id="speed-val" class="slider-val">50%</span>
                                 </div>
                                 <div class="slider-row">
-                                    <label>Z</label>
-                                    <input type="range" min="-200" max="200" value="0" id="ball-z-slider">
-                                    <span id="ball-z-val" class="slider-val">0</span>
+                                    <label>Gait</label>
+                                    <select id="gait-select" class="ctrl-select">
+                                        <option value="0">Tripod</option>
+                                        <option value="1">Wave</option>
+                                        <option value="2">Ripple</option>
+                                    </select>
                                 </div>
                             </div>
-                            <button class="btn btn-full" id="btn-ball-setpos" style="margin-top:4px">Set Position</button>
-                            <p class="hint">Click-drag to throw. Shift+drag = height.</p>
-                        </div>
-
-                        <div class="ctrl-section">
-                            <div class="ctrl-title">ARM CONTROL</div>
-                            <label class="toggle-row">
-                                <input type="checkbox" id="arm-override-toggle">
-                                <span>Manual Override</span>
-                            </label>
-                            <div class="slider-group">
-                                <div class="slider-row">
-                                    <label>Base</label>
-                                    <input type="range" min="0" max="180" value="90" id="arm-base-slider">
-                                    <span id="arm-base-val" class="slider-val">90</span>
-                                </div>
-                                <div class="slider-row">
-                                    <label>Shoulder</label>
-                                    <input type="range" min="0" max="180" value="90" id="arm-shoulder-slider">
-                                    <span id="arm-shoulder-val" class="slider-val">90</span>
-                                </div>
-                                <div class="slider-row">
-                                    <label>Elbow</label>
-                                    <input type="range" min="0" max="180" value="90" id="arm-elbow-slider">
-                                    <span id="arm-elbow-val" class="slider-val">90</span>
-                                </div>
-                                <div class="slider-row">
-                                    <label>Gripper</label>
-                                    <input type="range" min="0" max="180" value="0" id="arm-gripper-slider">
-                                    <span id="arm-gripper-val" class="slider-val">0</span>
-                                </div>
-                            </div>
-                            <div id="arm-readout" class="arm-readout"></div>
-                            <div class="section-divider"></div>
-                            <label class="toggle-row">
-                                <input type="checkbox" id="ik-mode-toggle">
-                                <span>IK Cursor Mode</span>
-                            </label>
-                            <div id="ik-readout" class="arm-readout ik-readout"></div>
                         </div>
 
                     </div>
@@ -521,6 +536,15 @@
                 if (el) el.textContent = `pos: X:${bp.x.toFixed(0)} Y:${bp.y.toFixed(0)} Z:${bp.z.toFixed(0)}`;
             }
         }, 100);
+
+        // ── Collapsible ctrl sections ────────────────────────────────────────
+        document.querySelectorAll('.ctrl-title.collapsible').forEach(title => {
+            title.addEventListener('click', () => {
+                const body = document.getElementById(title.dataset.target);
+                const collapsed = title.classList.toggle('collapsed');
+                body.classList.toggle('collapsed', collapsed);
+            });
+        });
 
         // ── IK cursor toggle ────────────────────────────────────────────────
         document.getElementById('ik-mode-toggle').addEventListener('change', function() {
