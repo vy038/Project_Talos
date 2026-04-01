@@ -77,7 +77,7 @@
 #define HIP_NEUTRAL_L4  100    // Leg 4: Mid-Left     (hip ch1)
 #define HIP_NEUTRAL_L5  85    // Leg 5: Front-Left   (hip ch0)
 
-#define HIP_STRIDE_DEG      80      // hip swing amplitude (degrees). start small.
+#define HIP_STRIDE_DEG      65      // hip swing amplitude (degrees)
 #define KNEE_LIFT_DEG       25      // how high foot lifts during swing
 
 // #define HIP_STRIDE_DEG      10   // cut in half from 20
@@ -173,5 +173,15 @@ esp_err_t xGaitStandNeutral(void);
  * @return leg_angles_t current hip and knee angles for all legs. Note these are the computed angles before applying balance corrections, used for debugging and logging.
  */
 leg_angles_t xGaitGetAngles(void);
+
+/**
+ * @brief Returns true when the gait cycle is near the start (master_phase < 0.1).
+ *
+ * Use in state transitions to avoid switching mid-stride, which causes a
+ * leg-snap back to neutral before the new command takes effect.
+ * 
+ * @return true if master phase is in the first 10% of the cycle, indicating a good time to switch commands or gait types without causing leg snapping.
+ */
+bool bGaitStepComplete(void);
 
 #endif

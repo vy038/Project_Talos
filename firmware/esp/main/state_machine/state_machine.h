@@ -38,9 +38,25 @@
 // if ball center is within this many px of frame center, consider it "centered"
 #define BALL_CENTER_TOLERANCE_X     40
 
-// ball radius in px that means "close enough to grab"
-// TODO: calibrate by holding ball at grab distance and reading radius
-#define BALL_CLOSE_RADIUS_PX        60
+// tof threshhold of VL53L0X (mm) when robot is close enough to attempt grab (r field of UART packet)
+// TODO: calibrate by positioning ball at grab distance and reading ToF
+#define BALL_STOP_TOF_MM            200
+
+// reference max distance for accurate distance scaling at a speed (mm)
+#define BALL_APPROACH_FAR_MM        800
+
+// approximate camera horizontal FOV (degrees), used to convert ball_x pixel offset to arm base rotation angle during grab prep
+// OV2640 QVGA ≈ 62°.
+#define CAM_HFOV_DEG                62.0f
+
+// factor on the pixel→angle conversion for grab prep base rotation
+// >1 over-rotates slightly to make up for camera-arm lateral offset at close ranges
+// TODO: calibrate empirically
+#define BASE_ANGLE_SCALE            1.1f
+
+// pixel offset threshold for when to swap from course adjustment (tripod) to fine adjustment (wave) in align
+// avoids gait switch mid-stride when transitioning directly from search
+#define ALIGN_COARSE_THRESHOLD_X    80
 
 #define SEARCH_TIMEOUT_MS           10000   // how long to search before resetting timer
 #define GRAB_PREP_PAUSE_MS          1500    // let robot stabilize before grabbing

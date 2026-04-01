@@ -15,7 +15,18 @@ static const char *TAG = "STATE";
 static robot_state_t current_state = STATE_INIT;
 static int64_t state_enter_time = 0;
 static detection_result_t last_detection = {0};
+static bool grab_prep_arm_sent = false;
+static gait_type_t active_gait = GAIT_TRIPOD; // initial gait
 
+// helper function to switch gait if not already set, avoids mid-stride gait switches which cause leg snapping
+static void set_gait_if_needed(gait_type_t type) {
+    if (active_gait != type) {
+        vGaitSetType(type);
+        active_gait = type;
+    }
+}
+
+// get time spent in state
 static uint32_t ms_in_state(void) {
     return (uint32_t)((esp_timer_get_time() - state_enter_time) / 1000);
 }
@@ -24,6 +35,9 @@ static void transition(robot_state_t new_state) {
     // transition to a new state and reset timer
     ESP_LOGI(TAG, "Transition: %d -> %d (was in state for %lums)",
              current_state, new_state, (unsigned long)ms_in_state());
+    if (new_state != STATE_GRAB_PREP) {
+        grab_prep_arm_sent = false;
+    }
     current_state = new_state;
     state_enter_time = esp_timer_get_time();
 }
@@ -38,7 +52,7 @@ static const arm_angles_t arm_stowed = {
 
 static const arm_angles_t arm_grab_ready = {
     .base     = 90.0f,
-    .shoulder = 45.0f,
+    .shoulder = 50.0f,
     .elbow    = 60.0f,
     .gripper  = 170.0f,
 };
@@ -61,7 +75,6 @@ static void handle_calibrate(void) {
         ESP_LOGI(TAG, "Starting MPU6050 calibration - keep robot STILL");
         xMPU6050_calibrate();
         xBalanceInit();
-        xArmSetAngles(&arm_stowed);
         return;
     }
 
@@ -80,8 +93,9 @@ static void handle_idle(void) {
 }
 
 static void handle_search(void) {
+    set_gait_if_needed(GAIT_TRIPOD);
     // tells robot to turn 360 right slowly while looking for the ball
-    vGaitSetCommand(MOVE_TURN_RIGHT, 0.3f);
+    vGaitSetCommand(MOVE_TURN_RIGHT, 0.2f);
 
     // stops when ball is found
     if (last_detection.fresh && last_detection.detected) {
@@ -107,6 +121,13 @@ static void handle_search(void) {
 }
 
 static void handle_align(void) {
+    // use tripod for coarse correction (avoids mid-stride gait switch from searching, causing janky leg movement),
+    int coarse_offset = (int)last_detection.ball_x - (CAM_FRAME_WIDTH / 2);
+    if (abs(coarse_offset) > ALIGN_COARSE_THRESHOLD_X) {
+        set_gait_if_needed(GAIT_TRIPOD);
+    } else { // switch to wave only for fine alignment when nearly centred
+        set_gait_if_needed(GAIT_WAVE);
+    }
 
     // if ball is not updated since last read, look for ball TODO change method?
     if (!last_detection.fresh) {
@@ -134,8 +155,9 @@ static void handle_align(void) {
         return;
     }
 
-    // scale turn speed down as ball gets closer (larger radius = closer)
-    float proximity = (float)last_detection.ball_radius / (float)BALL_CLOSE_RADIUS_PX;
+    // scale turn speed down as ball gets closer (smaller dist_mm = closer)
+    float proximity = 1.0f - (float)last_detection.ball_radius / (float)BALL_APPROACH_FAR_MM;
+    if (proximity < 0.0f) proximity = 0.0f;
     if (proximity > 1.0f) proximity = 1.0f;
     float turn_speed = 0.3f - (0.2f * proximity);  // 0.3 when far, 0.08 when close
     if (turn_speed < 0.08f) turn_speed = 0.08f;
@@ -149,8 +171,10 @@ static void handle_align(void) {
 }
 
 static void handle_approach(void) {
-    // scale walk speed down as ball gets closer (larger radius = closer)
-    float proximity = (float)last_detection.ball_radius / (float)BALL_CLOSE_RADIUS_PX;
+    set_gait_if_needed(GAIT_TRIPOD);
+    // scale walk speed down as ball gets closer (smaller dist_mm = closer)
+    float proximity = 1.0f - (float)last_detection.ball_radius / (float)BALL_APPROACH_FAR_MM;
+    if (proximity < 0.0f) proximity = 0.0f;
     if (proximity > 1.0f) proximity = 1.0f;
     float walk_speed = 0.5f - (0.35f * proximity);  // 0.5 when far, 0.15 when close
     if (walk_speed < 0.1f) walk_speed = 0.1f;
@@ -182,9 +206,9 @@ static void handle_approach(void) {
         return;
     }
 
-    // if close enough, transition to grab state
-    if (last_detection.ball_radius >= BALL_CLOSE_RADIUS_PX) {
-        ESP_LOGI(TAG, "Ball within reach (radius=%d px)", last_detection.ball_radius);
+    // if close enough (tof dist_mm small enough), transition to grab state
+    if (last_detection.ball_radius > 0 && last_detection.ball_radius <= BALL_STOP_TOF_MM) {
+        ESP_LOGI(TAG, "Ball within reach (tof=%d mm)", last_detection.ball_radius);
         vGaitSetCommand(MOVE_STOP, 0);
         transition(STATE_GRAB_PREP);
     }
@@ -202,10 +226,25 @@ static void handle_grab_prep(void) {
         return;
     }
 
-    // move arm to proper grab position, if not already there
-    if (xArmGetState() == ARM_IDLE && ms_in_state() < GRAB_PREP_PAUSE_MS + 100) {
-        ESP_LOGI(TAG, "Moving arm to grab position");
-        xArmSetAngles(&arm_grab_ready);
+    // move arm to proper grab position (after stabilized)
+    if (!grab_prep_arm_sent) {
+        // compute base rotation from last known ball sideways offset
+        // center_offset > 0 = right so base < 90, center_offset < 0 = left so base > 90
+        float center_offset = (float)last_detection.ball_x - (CAM_FRAME_WIDTH / 2.0f);
+        float angle_offset  = center_offset * (CAM_HFOV_DEG / (float)CAM_FRAME_WIDTH) * BASE_ANGLE_SCALE;
+        float base_angle    = 90.0f - angle_offset;
+
+        // clamp to min and max
+        if (base_angle < BASE_ROTATION_MIN) base_angle = BASE_ROTATION_MIN;
+        if (base_angle > BASE_ROTATION_MAX) base_angle = BASE_ROTATION_MAX;
+
+        // send commands to arm to ensure servos are in ready grab pos
+        arm_angles_t grab = arm_grab_ready;
+        grab.base = base_angle;
+        ESP_LOGI(TAG, "Moving arm to grab position (base=%.1f, px_offset=%.0f)",
+                 base_angle, center_offset);
+        xArmSetAngles(&grab);
+        grab_prep_arm_sent = true;
     }
 
     // grab object
@@ -220,15 +259,19 @@ static void handle_grab_prep(void) {
 }
 
 static void handle_grab(void) {
-    // actual grabing actions for arm TODO merge with handle_grab_prep, see if theres a way to run the prep before doing this?
-    if (ms_in_state() < 300) {
-        return;
-    }
-    if (ms_in_state() < 400) {
+    // close gripper immediately on entry
+    if (ms_in_state() < 50) {
         xArmGripper(0.0f);
         return;
     }
+    // wait until gripper reaches target, transition once closed or after timeout
+    // (ARM_STEP_DEG = 1/20ms = 50 deg/sec, 170 deg travel takes ~3.4s)
+    if (bArmAtTarget()) {
+        transition(STATE_LIFT);
+        return;
+    }
     if (ms_in_state() > 1500) {
+        ESP_LOGW(TAG, "Gripper close timeout");
         transition(STATE_LIFT);
     }
 }

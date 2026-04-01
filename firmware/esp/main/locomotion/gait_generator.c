@@ -187,21 +187,18 @@ void vGaitSetCommand(move_command_t cmd, float speed) {
     if (speed > 1.0f) speed = 1.0f;
     current_command = cmd;
     current_speed = speed;
-    if (cmd == MOVE_STOP) {
-        master_phase = 0.0f;
-    }
 }
 
 void vGaitSetType(gait_type_t type) {
-    // change gait walking type
+    // change gait walking type — do NOT reset master_phase so legs finish their
+    // current step rather than teleporting back to phase-0 position
     current_gait = type;
     switch (type) {
         case GAIT_TRIPOD: active_offsets = tripod_offsets; break;
         case GAIT_WAVE:   active_offsets = wave_offsets;   break;
         case GAIT_RIPPLE: active_offsets = ripple_offsets;  break;
     }
-    master_phase = 0.0f;
-    ESP_LOGI(TAG, "Gait changed to %d", type);
+    ESP_LOGI(TAG, "Gait changed to %d (phase=%.2f)", type, master_phase);
 }
 
 esp_err_t xGaitUpdate(const float *knee_corrections) {
@@ -306,4 +303,11 @@ esp_err_t xGaitStandNeutral(void) {
 
 leg_angles_t xGaitGetAngles(void) {
     return current_angles;
+}
+
+bool bGaitStepComplete(void) {
+    // True when master_phase is near the start of a new cycle — all legs are
+    // close to their neutral stance positions, so a gait transition or stop
+    // won't cause a mid-stride snap back to neutral.
+    return (master_phase < 0.1f || master_phase > 0.9f);
 }

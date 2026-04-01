@@ -22,9 +22,10 @@ static const char *TAG = "ARM";
 #define ARM_ELBOW_CH     8
 #define ARM_GRIPPER_CH   9
 
-#define ARM_STEP_DEG    2.0f
-#define ANGLE_TOLERANCE 2.0f
-#define I2C_RETRIES     3
+#define ARM_STEP_DEG         1.0f   // arm joints (base, shoulder, elbow)
+#define ARM_GRIPPER_STEP_DEG 4.0f   // gripper servo rate is faster: 170 deg in ~850ms vs regular 3.4s
+#define ANGLE_TOLERANCE      2.0f
+#define I2C_RETRIES          3
 
 static arm_angles_t current_angles = {90.0f, 90.0f, 90.0f, 90.0f};
 static arm_angles_t target_angles  = {90.0f, 90.0f, 90.0f, 90.0f};
@@ -73,6 +74,7 @@ esp_err_t xArmSetAngles(const arm_angles_t *angles) {
 }
 
 esp_err_t xArmSetAngleWithRetry(uint8_t channel, uint8_t angle) {
+    // same as xPCA9685SetAngle but with retry logic and bus recovery on timeout, returns last error if all retries fail
     esp_err_t ret;
     for (int attempt = 0; attempt < I2C_RETRIES; attempt++) {
         ret = xPCA9685SetAngle(I2C_MASTER_NUM, PCA9685_ARM_ADDR, channel, angle);
@@ -102,12 +104,13 @@ esp_err_t xArmUpdate(void) {
         &target_angles.elbow, &target_angles.gripper
     };
 
-    // move each joint towards target by ARM_STEP_DEG, but don't overshoot
+    // move each joint towards target, gripper uses a faster step rate
     bool still_moving = false;
     for (int i = 0; i < 4; i++) {
+        float step = (i == 3) ? ARM_GRIPPER_STEP_DEG : ARM_STEP_DEG;
         float err = *tgt[i] - *cur[i];
-        if (fabsf(err) > ARM_STEP_DEG) {
-            *cur[i] += (err > 0.0f) ? ARM_STEP_DEG : -ARM_STEP_DEG;
+        if (fabsf(err) > step) {
+            *cur[i] += (err > 0.0f) ? step : -step;
             still_moving = true;
         } else {
             *cur[i] = *tgt[i];

@@ -54,7 +54,7 @@ void app_main(void) {
         return;
     }
 
-    // try to init MPU6050 — if not found, run without balance
+    // try to init MPU6050, if not found, run without balance
     bool mpu_available = (xMPU6050_init() == ESP_OK);
     if (!mpu_available) {
         printf("MPU6050 not detected — balance task disabled\n");
@@ -64,7 +64,7 @@ void app_main(void) {
          run_test();
     }
 
-    // make tasks
+    // make all tasks
     xTaskCreatePinnedToCore(vPowerMonTask,     "power_mon",  2048, NULL, 1, NULL,                   1);
     xTaskCreatePinnedToCore(vUartCamTask,      "uart_cam",   3072, NULL, 3, &xUartCamTaskHandle,    1);
     xTaskCreatePinnedToCore(vGaitTask,         "gait",       4096, NULL, 5, &xGaitTaskHandle,       1);
