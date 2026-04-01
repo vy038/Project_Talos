@@ -36,6 +36,10 @@ controls.enableDamping = true;
 controls.maxPolarAngle = Math.PI - 0.05;
 controls.minPolarAngle = 0.05;
 
+// Track previous robot position so we can apply movement deltas to the camera
+// instead of locking controls.target to robotPos (which would fight with pan).
+const prevRobotPosForCam = { x: 0, y: 30, z: 0 };
+
 // Lighting
 scene.add(new THREE.AmbientLight(0x404060, 1.5));
 const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
@@ -162,7 +166,7 @@ const SIM_LINK3_OFFSET = -13;   // ARM_LINK3_OFFSET 26.83mm (down, approx -Z in 
 // Arm geometry
 // ARM_BASE_ANGLE=38°, LINK1=98mm, LINK2=140mm, LINK3=91mm
 const armBaseGroup = new THREE.Group();
-armBaseGroup.position.set(0, 8, 25);
+armBaseGroup.position.set(0, 4.8, 25);  // ARM_BASE_HEIGHT=12mm / 2.5mm per px = 4.8
 armBaseGroup.rotation.x = -(38 * Math.PI / 180);  // ARM_BASE_ANGLE
 body.add(armBaseGroup);
 
@@ -281,7 +285,10 @@ const BALL_REAL_RADIUS_MM = 20.0;
 // Camera group — attached to body, front-bottom (-Z face, opposite arm at +Z)
 // ~4cm below base (16px at 2.5mm/px scale), at front face
 const camGroup = new THREE.Group();
-camGroup.position.set(0, -22, -38);
+// Offset derived from firmware constants:
+//   CAMERA_TO_ARM_OFFSET_X = 44.93mm → 18 sim units below arm (arm at y=8 → cam y=-10)
+//   CAMERA_TO_ARM_OFFSET_Z = 163.51mm → 65.4 sim units forward of arm (arm at z=25 → cam z=-40)
+camGroup.position.set(0, -10, -40);
 camGroup.rotation.y = Math.PI; // face outward (local +Z = world -Z = robot front)
 body.add(camGroup);
 
@@ -344,6 +351,41 @@ const fillMat = new THREE.MeshBasicMaterial({
 camGroup.add(new THREE.Mesh(fillGeom, fillMat));
 
 // ============================================================================
+// VL53L0X ToF Sensor (mounted beside the camera, also faces forward)
+// ============================================================================
+
+// Sensor body (small teal PCB box)
+const tofGroup = new THREE.Group();
+tofGroup.position.set(0, -10, 10);  // CAMERA_TO_VL53X_OFFSET_X=24.41mm down, CAMERA_TO_VL53X_OFFSET_Z=24.41mm forward → /2.5 = ~10 sim units each
+camGroup.add(tofGroup);
+
+const tofMat = new THREE.MeshPhongMaterial({ color: 0x00aaaa, emissive: 0x003333 });
+const tofMesh = new THREE.Mesh(new THREE.BoxGeometry(5, 3, 4), tofMat);
+tofGroup.add(tofMesh);
+
+// IR emitter dot (yellow)
+const tofEmitterMesh = new THREE.Mesh(
+    new THREE.SphereGeometry(0.7, 6, 6),
+    new THREE.MeshPhongMaterial({ color: 0xffff00, emissive: 0x888800 })
+);
+tofEmitterMesh.position.z = 2.5;
+tofGroup.add(tofEmitterMesh);
+
+// Beam line — extends forward (+Z in tofGroup local = robot forward)
+// Updated every frame to reflect measured distance
+const tofBeamVerts = new Float32Array([0, 0, 0,  0, 0, 100]);
+const tofBeamGeom = new THREE.BufferGeometry();
+tofBeamGeom.setAttribute('position', new THREE.BufferAttribute(tofBeamVerts, 3));
+const tofBeamLine = new THREE.Line(
+    tofBeamGeom,
+    new THREE.LineBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.5 })
+);
+tofGroup.add(tofBeamLine);
+
+// Tracks last computed ToF reading in sim units for beam rendering
+let lastTofSimDist = 80; // default ~200mm
+
+// ============================================================================
 // Simulated Camera Detection (pinhole projection of ball into camera view)
 // ============================================================================
 
@@ -373,12 +415,27 @@ function simulateCameraDetection(ballPos) {
     if (Math.abs(angleH) > CAM_HFOV_RAD / 2 || Math.abs(angleV) > CAM_VFOV_RAD / 2) return null;
 
     // Pinhole projection to camera image pixels
-    const cx = CAM_W / 2 + (ballLocal.x / ballLocal.z) * CAM_FOCAL_PX;
+    const cx = CAM_W / 2 - (ballLocal.x / ballLocal.z) * CAM_FOCAL_PX;
     const cy = CAM_H / 2 - (ballLocal.y / ballLocal.z) * CAM_FOCAL_PX;
 
-    // Distance from camera to ball (sim units)
+    // Distance from camera to ball (sim units → mm)
     const distSim = ballRel.length();
     const distMm = distSim * SIM_MM_PER_PX;
+
+    // VL53L0X ToF — ray from tofGroup origin along +Z in world space.
+    // The sensor is co-located with the camera (same forward direction).
+    // We re-use the camera's forward vector and just measure ball distance
+    // along that axis, clamped to sensor range (20–2000mm).
+    const tofWorldPos = new THREE.Vector3();
+    tofGroup.getWorldPosition(tofWorldPos);
+    const tofDistSim = Math.max(0, tofWorldPos.distanceTo(ballWorld) - ballRadius);
+    const tofDistMm = Math.round(Math.min(2000, Math.max(20, tofDistSim * SIM_MM_PER_PX)));
+
+    // Update beam length (sim units)
+    lastTofSimDist = tofDistSim;
+    const beamPos = tofBeamGeom.attributes.position;
+    beamPos.setXYZ(1, 0, 0, tofDistSim);
+    beamPos.needsUpdate = true;
 
     // Pixel radius on camera image
     const ballSimRadius = ballRadius; // from physics ball
@@ -394,18 +451,18 @@ function simulateCameraDetection(ballPos) {
     // Bearing angle (degrees)
     const brgDeg = angleH * 180 / Math.PI;
 
-    // Build UART packet (11 bytes)
+    // Build UART packet (11 bytes) — r field = fused dist mm (see uart_protocol.h)
     const det = 1;
     const pktX = Math.max(0, Math.min(65535, Math.round(cx)));
     const pktY = Math.max(0, Math.min(65535, Math.round(cy)));
-    const pktR = Math.max(0, Math.min(65535, Math.round(distMm)));
+    const pktR = Math.max(0, Math.min(65535, tofDistMm));
 
     const pktBytes = [
         0xAA, 0x55, 0x01, det,
         (pktX >> 8) & 0xFF, pktX & 0xFF,
         (pktY >> 8) & 0xFF, pktY & 0xFF,
         (pktR >> 8) & 0xFF, pktR & 0xFF,
-        0 // checksum placeholder
+        0
     ];
     let chk = 0;
     for (let i = 2; i < 10; i++) chk ^= pktBytes[i];
@@ -426,14 +483,11 @@ function simulateCameraDetection(ballPos) {
         oy: parseFloat(oy.toFixed(3)),
         brg_deg: parseFloat(brgDeg.toFixed(2)),
         dist_mm: parseFloat(distMm.toFixed(1)),
-        tof: 0,
+        dist_tof_mm: tofDistMm,
+        tof: tofDistMm,
         pkt: pktHex,
-        pkt_decoded: {
-            x: pktX,
-            y: pktY,
-            r: pktR,
-            checksum: '0x' + chk.toString(16).toUpperCase().padStart(2, '0'),
-        },
+        pkt_decoded: { x: pktX, y: pktY, r: pktR,
+            checksum: '0x' + chk.toString(16).toUpperCase().padStart(2, '0') },
     };
 }
 
@@ -548,7 +602,7 @@ function ikSolveFromWorld(cursorWorld) {
 
     const armOffsetMatrix = new THREE.Matrix4();
     const tiltMatrix = new THREE.Matrix4().makeRotationX(-(38 * Math.PI / 180));  // ARM_BASE_ANGLE
-    const transMatrix = new THREE.Matrix4().makeTranslation(0, 8, 25);
+    const transMatrix = new THREE.Matrix4().makeTranslation(0, 4.8, 25);  // matches armBaseGroup position
     armOffsetMatrix.multiplyMatrices(transMatrix, tiltMatrix);
 
     const mountMatrix = new THREE.Matrix4();
@@ -838,7 +892,21 @@ function updateRobot(state) {
         body.position.y = robotPos.y;
     }
 
-    controls.target.set(robotPos.x, robotPos.y, robotPos.z);
+    // Follow robot translation by applying deltas — preserves pan offset
+    const cdx = robotPos.x - prevRobotPosForCam.x;
+    const cdy = robotPos.y - prevRobotPosForCam.y;
+    const cdz = robotPos.z - prevRobotPosForCam.z;
+    if (Math.abs(cdx) + Math.abs(cdy) + Math.abs(cdz) > 0.001) {
+        controls.target.x += cdx;
+        controls.target.y += cdy;
+        controls.target.z += cdz;
+        camera.position.x += cdx;
+        camera.position.y += cdy;
+        camera.position.z += cdz;
+    }
+    prevRobotPosForCam.x = robotPos.x;
+    prevRobotPosForCam.y = robotPos.y;
+    prevRobotPosForCam.z = robotPos.z;
 
     // Arm
     const armSource = window.ArmControl.override
@@ -863,7 +931,7 @@ function updateRobot(state) {
     const baseRad = (smoothed.arm.base - 90) * Math.PI / 180 + Math.PI;
     armBaseGroup.rotation.y = baseRad;
 
-    const shoulderRad = (smoothed.arm.shoulder - 90) * Math.PI / 180;
+    const shoulderRad = -(smoothed.arm.shoulder - 90) * Math.PI / 180;
     shoulderGroup.rotation.x = shoulderRad;
 
     const elbowRad = (smoothed.arm.elbow - 90 + 60) * Math.PI / 180;
@@ -913,6 +981,13 @@ function updateRobot(state) {
         // Update readouts
         const relPos = ikCursorMesh.position.clone().sub(armBaseWorld);
         updateIKReadout(relPos, distToBase, reachable);
+
+        // Re-solve every frame so the arm converges: tipToWrist offset shifts as the
+        // arm lerps, so running IK once per mouse-move leaves the wrist (not gripper
+        // tip) at the cursor.  Iterating each frame drives it to true convergence.
+        if (!window.IKCursor.dragging) {
+            solveAndApplyIK();
+        }
     } else {
         ikCursorMesh.visible = false;
         ikLine.visible = false;
@@ -1083,6 +1158,8 @@ function updateBallGrab() {
     _grabCenter.lerpVectors(_grabMountW, _grabTipW, 0.5);
 
     const ballPos = _grabBallV.set(ballBody.position.x, ballBody.position.y, ballBody.position.z);
+    // Use tip distance (not midpoint) so lateral offsets don't push ball out of envelope
+    const distToTip = ballPos.distanceTo(_grabTipW);
     const distToGrab = ballPos.distanceTo(_grabCenter);
     const jawOpen = Math.max(0, Math.min(1, smoothed.arm.gripper / 140));
 
@@ -1094,8 +1171,10 @@ function updateBallGrab() {
         // Release if jaws open wide enough
         if (jawOpen > 0.5) ballGrabbed = false;
     } else {
-        // Grab if ball is within jaw envelope and jaws are mostly closed
-        if (distToGrab < ballRadius + 10 && jawOpen < 0.25) {
+        // Grab if ball is anywhere within the jaw span and jaws are closing.
+        // jawOpen threshold raised to 0.4 to compensate for smoothing lag on gripper angle.
+        const inEnvelope = distToTip < ballRadius + 30 || distToGrab < ballRadius + 30;
+        if (inEnvelope && jawOpen < 0.4) {
             ballGrabbed = true;
         }
     }
@@ -1354,6 +1433,7 @@ window.resetRobotPosition = function() {
     body.position.set(0, 30, 0);
     body.rotation.y = 0;
     controls.target.set(0, 30, 0);
+    prevRobotPosForCam.x = 0; prevRobotPosForCam.y = 30; prevRobotPosForCam.z = 0;
     if (window.PhysicsBall) {
         window.PhysicsBall.active = false;
     }
@@ -1381,23 +1461,44 @@ function animate() {
         };
 
         // Simulated camera detection (~20 FPS = every 3 frames at 60fps)
+        // States 0-6 need camera (INIT through GRAB_PREP); 7+ (GRAB/LIFT/DONE) don't
+        const camNeeded = !latestState || (latestState.robot_state !== undefined ? latestState.robot_state <= 6 : true);
+
         camTickCounter++;
-        if (camTickCounter >= 3 && window.PhysicsBall.active) {
+        if (camTickCounter >= 3 && window.PhysicsBall.active && camNeeded) {
             camTickCounter = 0;
             const det = simulateCameraDetection(ballBody.position);
             if (det) {
                 window.SimWS.send(det);
                 window.LatestCamDetection = det;
+                // Forward ToF reading to C sim so sim_set_tof_distance_mm is updated
+                window.SimWS.send({ type: 'tof_update', tof_mm: det.dist_tof_mm });
             } else {
+                // Ball out of FOV — reset beam to max range
+                const beamPos = tofBeamGeom.attributes.position;
+                beamPos.setXYZ(1, 0, 0, 200);
+                beamPos.needsUpdate = true;
                 const noDet = sendNoDetection();
                 window.SimWS.send(noDet);
                 window.LatestCamDetection = noDet;
+                window.SimWS.send({ type: 'tof_update', tof_mm: 2000 });
             }
-        } else if (!window.PhysicsBall.active && camTickCounter >= 3) {
+        } else if (!window.PhysicsBall.active && camNeeded && camTickCounter >= 3) {
+            // Ball inactive but camera still needed — send no-detection to firmware
             camTickCounter = 0;
+            const beamPos = tofBeamGeom.attributes.position;
+            beamPos.setXYZ(1, 0, 0, 200);
+            beamPos.needsUpdate = true;
             const noDet = sendNoDetection();
             window.SimWS.send(noDet);
             window.LatestCamDetection = noDet;
+            window.SimWS.send({ type: 'tof_update', tof_mm: 2000 });
+        } else if (!camNeeded && camTickCounter >= 3) {
+            // Camera not needed (state 7+) — just reset beam visually, no UART packets
+            camTickCounter = 0;
+            const beamPos = tofBeamGeom.attributes.position;
+            beamPos.setXYZ(1, 0, 0, 200);
+            beamPos.needsUpdate = true;
         }
     }
 }

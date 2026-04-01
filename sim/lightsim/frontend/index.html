@@ -38,23 +38,30 @@
         <header id="topbar">
             <div class="topbar-left">
                 <span class="brand">LIGHTSIM</span>
-                <span class="brand-sub">Talos</span>
+                <span class="brand-sep">/</span>
+                <span class="brand-sub">Project Talos</span>
             </div>
+            <div class="topbar-divider"></div>
             <div id="panel-toggles">
                 <button class="ptab active" data-panel="controls">CTRL</button>
                 <button class="ptab active" data-panel="debug">DEBUG</button>
                 <button class="ptab active" data-panel="view3d">3D</button>
                 <button class="ptab" data-panel="view2d">2D</button>
-                <button class="ptab" data-panel="viewcam">CAM</button>
+                <button class="ptab active" data-panel="viewcam">CAM</button>
+            </div>
+            <div class="topbar-divider"></div>
+            <div id="state-badge-wrap">
+                <span class="state-label">STATE</span>
+                <span id="state-badge" class="state-badge state-idle">OFFLINE</span>
             </div>
             <div class="topbar-right">
                 <div class="status-group">
                     <span class="status-dot" id="ws-dot"></span>
                     <span id="ws-status" class="disconnected">OFFLINE</span>
                 </div>
-                <span class="sep">|</span>
+                <span class="topbar-divider"></span>
                 <span id="fps-counter" class="mono-dim">-- Hz</span>
-                <span class="sep">|</span>
+                <span class="topbar-divider"></span>
                 <span id="timescale-label" class="mono-dim">1.0x</span>
             </div>
         </header>
@@ -232,7 +239,7 @@
                     </div>
                 </div>
 
-                <div class="pane" id="pane-view-cam">
+                <div class="pane active" id="pane-view-cam">
                     <div class="pane-header">ESP-CAM VIEW</div>
                     <div class="pane-body" style="padding:0">
                         <iframe id="cam-iframe" src="/espcam/test_red_ball.html"
@@ -580,6 +587,30 @@
             });
             rowHandle.addEventListener('pointerup', () => { rowDragging = false; });
         })();
+
+        // ── State badge ──────────────────────────────────────────────────────
+        const STATE_NAMES = [
+            'INIT', 'CALIBRATE', 'IDLE', 'SEARCH',
+            'APPROACH', 'ALIGN', 'GRAB_PREP', 'GRAB', 'LIFT', 'DONE', 'EMERGENCY'
+        ];
+        const STATE_CLASSES = [
+            'state-idle', 'state-idle', 'state-idle', 'state-search',
+            'state-approach', 'state-approach', 'state-grabprep', 'state-grab',
+            'state-grab', 'state-done', 'state-emergency'
+        ];
+        setInterval(() => {
+            const badge = document.getElementById('state-badge');
+            if (!badge) return;
+            const s = SimState.data;
+            if (!s || s.robot_state === undefined) {
+                badge.textContent = 'OFFLINE';
+                badge.className = 'state-badge state-idle';
+                return;
+            }
+            const idx = s.robot_state;
+            badge.textContent = STATE_NAMES[idx] || '?';
+            badge.className = 'state-badge ' + (STATE_CLASSES[idx] || 'state-idle');
+        }, 100);
 
         // Live readout
         setInterval(() => {

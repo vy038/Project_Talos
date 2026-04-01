@@ -15,6 +15,9 @@ const { spawn, execSync } = require('child_process');
 const path = require('path');
 const http = require('http');
 const readline = require('readline');
+const net = require('net');
+
+const INJECTION_PORT = 9998;
 
 const PORT = process.env.PORT || 3000;
 const CAM_WS_PORT = 8765;
@@ -63,12 +66,28 @@ wss.on('connection', (ws) => {
     ws.on('message', (raw) => {
         try {
             const msg = JSON.parse(raw);
-            if (msg.type === 'camera_detection') {
+            if (msg.type && msg.type !== 'tof_update') {
+                console.log(`[WS←Browser] type=${msg.type} pkt=${msg.pkt ? 'yes' : 'NO'}`);
+            }
+            if (msg.type === 'tof_update') {
+                // Forward ToF distance to C sim so vl53l0x_stub returns correct value
+                injWrite(JSON.stringify({ type: 'tof', mm: msg.tof_mm }) + '\n');
+            } else if (msg.type === 'camera_detection') {
                 // Forward simulated camera detection to camera WS (port 8765)
                 camFrameCount++;
                 msg.frame = camFrameCount;
                 delete msg.type;
                 broadcastCamera(msg);
+
+                // Inject the pre-built UART packet directly into the C simulator.
+                // viewer3d.js already built and checksummed msg.pkt (hex string).
+                if (msg.pkt) {
+                    const bytes = Buffer.from(msg.pkt, 'hex');
+                    injWrite(bytes);
+                    if (msg.det) {
+                        console.log(`[CAM→SIM] Injected ${bytes.length}B: ${msg.pkt.substring(0,22)}... det=${msg.det} cx=${msg.cx} cy=${msg.cy}`);
+                    }
+                }
             }
         } catch (e) { /* ignore malformed */ }
     });
@@ -93,9 +112,39 @@ function broadcast(jsonLine) {
 
 let simProcess = null;
 
+// ============================================================================
+// TCP injection client — connects to the C sim's injection server (port 9998)
+// ============================================================================
+
+let injSocket = null;
+let injReconnectTimer = null;
+
+function injWrite(data) {
+    if (injSocket && !injSocket.destroyed) {
+        injSocket.write(data);
+    }
+}
+
+function connectInjection() {
+    if (injReconnectTimer) { clearTimeout(injReconnectTimer); injReconnectTimer = null; }
+    if (injSocket && !injSocket.destroyed) { injSocket.removeAllListeners(); injSocket.destroy(); }
+
+    injSocket = new net.Socket();
+    injSocket.connect(INJECTION_PORT, '127.0.0.1', () => {
+        console.log('[INJ] Connected to sim injection server');
+    });
+    injSocket.on('error', () => { /* sim not ready yet, will retry */ });
+    injSocket.on('close', () => {
+        injSocket = null;
+        injReconnectTimer = setTimeout(connectInjection, 500);
+    });
+}
+
 function killSimulator() {
     if (!simProcess) return;
     console.log('[SIM] Killing simulator...');
+    if (injReconnectTimer) { clearTimeout(injReconnectTimer); injReconnectTimer = null; }
+    if (injSocket) { injSocket.removeAllListeners(); injSocket.destroy(); injSocket = null; }
     simProcess.kill('SIGTERM');
     // Force kill after 500ms if SIGTERM didn't work
     const proc = simProcess;
@@ -112,8 +161,11 @@ function startSimulator() {
 
     console.log(`[SIM] Starting: ${SIM_PATH} --json`);
     simProcess = spawn(SIM_PATH, ['--json'], {
-        stdio: ['pipe', 'pipe', 'pipe'],
+        stdio: ['ignore', 'pipe', 'pipe'],
     });
+
+    // Connect injection client after a short delay to let the C server socket bind
+    setTimeout(connectInjection, 300);
 
     // Read JSON lines from stdout
     const rl = readline.createInterface({ input: simProcess.stdout });
@@ -165,7 +217,7 @@ app.post('/api/compile', (req, res) => {
 
         // Rebuild
         const buildDir = path.join(__dirname, '..', 'build');
-        execSync('cmake --build .', { cwd: buildDir, stdio: 'pipe', timeout: 30000 });
+        execSync('cmake --build . -- -j$(nproc)', { cwd: buildDir, stdio: 'pipe', timeout: 120000 });
         console.log('[API] Build succeeded');
 
         // Restart
@@ -177,31 +229,33 @@ app.post('/api/compile', (req, res) => {
     }
 });
 
-// Inject ball detection (simulated camera UART packet)
-app.post('/api/inject/detection', (req, res) => {
-    const { detected, ball_x, ball_y, ball_radius } = req.body;
-
-    // Build the 11-byte detection packet per state_machine.h protocol
+// Build and inject an 11-byte detection UART packet into the C simulator stdin.
+// The C sim's stdin reader calls sim_uart_inject() which fills the virtual UART
+// buffer, making it available to uart_cam_task's xUARTReadTimeout().
+function injectDetectionPacket({ detected, ball_x, ball_y, ball_radius }) {
     const packet = Buffer.alloc(11);
-    packet[0] = 0xAA;                          // start byte 0
-    packet[1] = 0x55;                          // start byte 1
-    packet[2] = 0x01;                          // type = detection
-    packet[3] = detected ? 1 : 0;             // detected flag
-    packet[4] = (ball_x >> 8) & 0xFF;         // x high
-    packet[5] = ball_x & 0xFF;                // x low
-    packet[6] = (ball_y >> 8) & 0xFF;         // y high
-    packet[7] = ball_y & 0xFF;                // y low
-    packet[8] = (ball_radius >> 8) & 0xFF;    // radius high
-    packet[9] = ball_radius & 0xFF;           // radius low
-
-    // Checksum: XOR of bytes 2-9
+    packet[0] = 0xAA;
+    packet[1] = 0x55;
+    packet[2] = 0x01;
+    packet[3] = detected ? 1 : 0;
+    packet[4] = (ball_x >> 8) & 0xFF;
+    packet[5] =  ball_x       & 0xFF;
+    packet[6] = (ball_y >> 8) & 0xFF;
+    packet[7] =  ball_y       & 0xFF;
+    packet[8] = (ball_radius >> 8) & 0xFF;
+    packet[9] =  ball_radius       & 0xFF;
     let checksum = 0;
     for (let i = 2; i < 10; i++) checksum ^= packet[i];
     packet[10] = checksum;
 
-    // Send to simulator's stdin
-    if (simProcess && simProcess.stdin.writable) {
-        simProcess.stdin.write(packet);
+    injWrite(packet);
+    return true;
+}
+
+// Inject ball detection (simulated camera UART packet)
+app.post('/api/inject/detection', (req, res) => {
+    const { detected, ball_x, ball_y, ball_radius } = req.body;
+    if (injectDetectionPacket({ detected, ball_x, ball_y, ball_radius })) {
         res.json({ status: 'ok' });
     } else {
         res.status(503).json({ status: 'error', message: 'Simulator not running' });
@@ -212,24 +266,14 @@ app.post('/api/inject/detection', (req, res) => {
 let latestCommand = { type: 'move', command: 'stop', speed: 0, gait: 0 };
 app.post('/api/command', (req, res) => {
     latestCommand = req.body;
-    // Write command to sim stdin if running
-    if (simProcess && simProcess.stdin.writable) {
-        try {
-            simProcess.stdin.write(JSON.stringify(req.body) + '\n');
-        } catch (e) { /* ignore */ }
-    }
+    injWrite(JSON.stringify(req.body) + '\n');
     res.json({ status: 'ok' });
 });
 
 // Run test sequence
 app.post('/api/test', (req, res) => {
     const testName = req.body.test || 'gait';
-    // Write test command to sim stdin if running
-    if (simProcess && simProcess.stdin.writable) {
-        try {
-            simProcess.stdin.write(JSON.stringify({ type: 'test', test: testName }) + '\n');
-        } catch (e) { /* ignore */ }
-    }
+    injWrite(JSON.stringify({ type: 'test', test: testName }) + '\n');
     res.json({ status: 'ok', test: testName });
 });
 

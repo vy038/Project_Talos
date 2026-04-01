@@ -8,6 +8,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <math.h>
+#include <pthread.h>
 
 /* ========================================================================== */
 /*  JSON output control                                                        */
@@ -16,6 +18,8 @@
 static bool json_output_enabled = false;
 static uint32_t emit_accumulator_ms = 0;
 #define EMIT_INTERVAL_MS 20  /* Match firmware's 50Hz update rate */
+
+static pthread_mutex_t emit_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void sim_enable_json_output(bool enable) {
     json_output_enabled = enable;
@@ -36,7 +40,6 @@ bool sim_exit_requested(void) {
 }
 
 void sim_on_tick(uint32_t delay_ms) {
-    /* Check if we should terminate (SIGTERM received) */
     if (exit_requested) {
         fprintf(stderr, "\n[SIM] Exit requested — terminating.\n");
         fflush(stderr);
@@ -45,11 +48,14 @@ void sim_on_tick(uint32_t delay_ms) {
     }
 
     if (!json_output_enabled) return;
+
+    pthread_mutex_lock(&emit_mutex);
     emit_accumulator_ms += delay_ms;
     if (emit_accumulator_ms >= EMIT_INTERVAL_MS) {
         emit_accumulator_ms = 0;
-        sim_emit_state();
+        sim_emit_state();  /* emit while holding mutex so only one thread writes at a time */
     }
+    pthread_mutex_unlock(&emit_mutex);
 }
 
 /* ========================================================================== */
@@ -126,6 +132,26 @@ void sim_log_i2c(const char *op, uint8_t addr, uint8_t reg, const uint8_t *data,
 static float imu_ax = 0.0f, imu_ay = 0.0f, imu_az = -9.81f;
 static float imu_gx = 0.0f, imu_gy = 0.0f, imu_gz = 0.0f;
 
+/* VL53L0X simulated distance (mm). Default: 500mm (50cm, comfortably in range) */
+static uint16_t tof_distance_mm = 500;
+
+/* Current robot state (state_machine enum value) — emitted in JSON */
+static int robot_state = 0;
+
+/* Optional getter callback — registered by main_sim.c after app_main starts */
+static int (*state_getter_fn)(void) = NULL;
+
+void sim_register_state_getter(int (*getter)(void)) {
+    state_getter_fn = getter;
+}
+
+void sim_set_robot_state(int state) {
+    robot_state = state;
+}
+
+uint16_t sim_get_tof_distance_mm(void) { return tof_distance_mm; }
+void     sim_set_tof_distance_mm(uint16_t mm) { tof_distance_mm = mm; }
+
 void sim_get_imu_override(float *ax, float *ay, float *az,
                           float *gx, float *gy, float *gz) {
     *ax = imu_ax; *ay = imu_ay; *az = imu_az;
@@ -157,6 +183,8 @@ void sim_state_init(void) {
 /* ========================================================================== */
 
 void sim_emit_state(void) {
+    if (state_getter_fn) robot_state = state_getter_fn();
+
     /* Emit JSON line to stdout for the bridge server */
     printf("{\"type\":\"state_update\",\"timestamp_us\":%lld,", (long long)get_time_us());
 
@@ -193,9 +221,19 @@ void sim_emit_state(void) {
            servos[0][6].angle, servos[0][7].angle,
            servos[0][8].angle, servos[0][9].angle);
 
-    /* IMU */
-    printf("\"imu\":{\"accel\":[%.3f,%.3f,%.3f],\"gyro\":[%.3f,%.3f,%.3f]},",
-           imu_ax, imu_ay, imu_az, imu_gx, imu_gy, imu_gz);
+    /* IMU — include derived roll/pitch so the frontend doesn't have to compute them */
+    float roll  = atan2f(imu_ay, -imu_az) * (180.0f / 3.14159265f);
+    float pitch = atan2f(imu_ax, -imu_az) * (180.0f / 3.14159265f);
+    float tilt  = sqrtf(roll * roll + pitch * pitch);
+    printf("\"imu\":{\"accel\":[%.3f,%.3f,%.3f],\"gyro\":[%.3f,%.3f,%.3f],"
+           "\"roll\":%.2f,\"pitch\":%.2f,\"tilt\":%.2f},",
+           imu_ax, imu_ay, imu_az, imu_gx, imu_gy, imu_gz, roll, pitch, tilt);
+
+    /* VL53L0X ToF distance */
+    printf("\"tof_mm\":%u,", (unsigned)tof_distance_mm);
+
+    /* Robot state machine state */
+    printf("\"robot_state\":%d,", robot_state);
 
     /* Recent I2C log (last 8 entries) */
     printf("\"i2c_log\":[");

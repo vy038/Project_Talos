@@ -41,6 +41,18 @@ esp_err_t xPCA9685SetPwm(i2c_port_t port, uint8_t addr, uint8_t channel, uint16_
 
 esp_err_t xPCA9685SetAngle(i2c_port_t port, uint8_t addr, uint8_t channel, uint8_t angle) {
     if (angle > 180) angle = 180;
+
+    /* Diagnostic: log arm servo changes (ch 6-9 on body board) */
+    static uint8_t prev_arm[4] = {90, 90, 90, 90};
+    if (addr == PCA9685_BODY_ADDR && channel >= 6 && channel <= 9) {
+        int idx = channel - 6;
+        if (angle != prev_arm[idx]) {
+            static const char *names[] = {"base", "shoulder", "elbow", "gripper"};
+            fprintf(stderr, "[ARM_SERVO] %s (ch%d): %d -> %d\n", names[idx], channel, prev_arm[idx], angle);
+            prev_arm[idx] = angle;
+        }
+    }
+
     uint16_t pulse_us = SERVO_MIN_PULSE_US +
                         (angle * (SERVO_MAX_PULSE_US - SERVO_MIN_PULSE_US) / 180);
     return xPCA9685SetPwm(port, addr, channel, pulse_us);

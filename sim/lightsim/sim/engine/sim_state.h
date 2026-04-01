@@ -33,6 +33,18 @@ void sim_get_imu_override(float *ax, float *ay, float *az,
 void sim_set_imu_override(float ax, float ay, float az,
                           float gx, float gy, float gz);
 
+/** Get/set simulated VL53L0X ToF distance in mm (called by vl53l0x_stub) */
+uint16_t sim_get_tof_distance_mm(void);
+void     sim_set_tof_distance_mm(uint16_t mm);
+
+/** Register a callback that returns the current robot state (int).
+ *  Called from main_sim.c after firmware starts. sim_state.c never
+ *  includes any firmware headers — main_sim.c is the bridge. */
+void sim_register_state_getter(int (*getter)(void));
+
+/** Fallback: set robot state directly (used if no getter registered) */
+void sim_set_robot_state(int state);
+
 /* ========================================================================== */
 /*  JSON emission                                                              */
 /* ========================================================================== */

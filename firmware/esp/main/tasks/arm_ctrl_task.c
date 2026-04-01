@@ -12,10 +12,11 @@ void vArmCtrlTask(void *pvParams) {
         xSemaphoreTake(xArmSemaphore, portMAX_DELAY);
 
         while (1) {
-            // take i2c mutex and update arm, then releases it
-            xSemaphoreTake(xI2CMutex, portMAX_DELAY);
-            xArmUpdate();
-            xSemaphoreGive(xI2CMutex);
+            // take i2c mutex and update arm control, if can't get mutex in time, skip cycle to avoid blocking other tasks
+            if (xSemaphoreTake(xI2CMutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+                xArmUpdate();
+                xSemaphoreGive(xI2CMutex);
+            }
 
             // 20ms cycle time
             vTaskDelay(pdMS_TO_TICKS(20));

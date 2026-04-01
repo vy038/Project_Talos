@@ -19,6 +19,8 @@
 #include <unistd.h>
 #include <time.h>
 #include <math.h>
+#include <pthread.h>
+#include <errno.h>
 
 /* Redirect firmware printf to stderr so stdout is clean JSON */
 #define printf(...) fprintf(stderr, __VA_ARGS__)
@@ -93,38 +95,125 @@ typedef uint32_t TickType_t;
 typedef int BaseType_t;
 typedef unsigned int UBaseType_t;
 typedef void (*TaskFunction_t)(void *);
-typedef void *TaskHandle_t;
 
-#define portTICK_PERIOD_MS  1
-#define pdMS_TO_TICKS(ms)   ((TickType_t)(ms))
-#define portMAX_DELAY       0xFFFFFFFF
-#define pdTRUE              1
-#define pdFALSE             0
-#define pdPASS              pdTRUE
-
+#define portTICK_PERIOD_MS      1
+#define pdMS_TO_TICKS(ms)       ((TickType_t)(ms))
+#define portMAX_DELAY           0xFFFFFFFFU
+#define pdTRUE                  1
+#define pdFALSE                 0
+#define pdPASS                  pdTRUE
 #define configMINIMAL_STACK_SIZE 1024
+#define configMAX_PRIORITIES    25
 
 /* Forward declare sim_on_tick for state emission during delays */
 extern void sim_on_tick(uint32_t delay_ms);
 
+/* Check if current task is suspended; block until resumed if so */
+extern void sim_check_suspend(void);
+
+/* ---------- task handle --------------------------------------------------- */
+
+typedef struct sim_task_s {
+    pthread_t       thread;
+    uint32_t        notify_value;
+    pthread_mutex_t notify_mutex;
+    pthread_cond_t  notify_cond;
+    int             suspended;
+    pthread_mutex_t suspend_mutex;
+    pthread_cond_t  suspend_cond;
+} sim_task_t;
+
+typedef sim_task_t *TaskHandle_t;
+
+/* ---------- queue handle -------------------------------------------------- */
+
+typedef struct {
+    pthread_mutex_t mutex;
+    pthread_cond_t  cond;
+    uint8_t        *buf;
+    size_t          item_size;
+    size_t          depth;
+    size_t          head, tail, count;
+} sim_queue_t;
+
+typedef sim_queue_t *QueueHandle_t;
+
+/* ---------- semaphore handle ---------------------------------------------- */
+
+typedef struct {
+    pthread_mutex_t mutex;
+    pthread_cond_t  cond;
+    int count;
+    int max;
+} sim_sem_t;
+
+typedef sim_sem_t *SemaphoreHandle_t;
+
+/* ---------- timing -------------------------------------------------------- */
+
+static inline TickType_t xTaskGetTickCount(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (TickType_t)((uint64_t)ts.tv_sec * 1000ULL + (uint64_t)ts.tv_nsec / 1000000ULL);
+}
+
 static inline void vTaskDelay(TickType_t ticks) {
-    usleep((useconds_t)(ticks) * 1000);
+    sim_check_suspend();
+    usleep((useconds_t)ticks * 1000U);
     sim_on_tick((uint32_t)ticks);
 }
 
-static inline BaseType_t xTaskCreate(
-    TaskFunction_t pvTaskCode,
-    const char *pcName,
-    uint32_t usStackDepth,
-    void *pvParameters,
-    UBaseType_t uxPriority,
-    TaskHandle_t *pxCreatedTask)
-{
-    (void)pvTaskCode; (void)pcName; (void)usStackDepth;
-    (void)pvParameters; (void)uxPriority; (void)pxCreatedTask;
-    printf("W (SIM) xTaskCreate('%s') called - tasks not yet supported in simulator\n", pcName);
-    return pdPASS;
+static inline void vTaskDelayUntil(TickType_t *pxPreviousWakeTime, TickType_t xTimeIncrement) {
+    sim_check_suspend();
+    TickType_t target = *pxPreviousWakeTime + xTimeIncrement;
+    TickType_t now    = xTaskGetTickCount();
+    if ((int32_t)(target - now) > 0) {
+        uint32_t sleep_ms = target - now;
+        usleep((useconds_t)sleep_ms * 1000U);
+        sim_on_tick(sleep_ms);
+    } else {
+        sim_on_tick(0);
+    }
+    *pxPreviousWakeTime = xTaskGetTickCount();
 }
+
+static inline void vTaskPrioritySet(TaskHandle_t handle, UBaseType_t prio) {
+    (void)handle; (void)prio; /* priority not enforced in sim */
+}
+
+/* ---------- task creation / control (implemented in freertos_sim.c) ------- */
+
+BaseType_t xTaskCreatePinnedToCore(TaskFunction_t func, const char *name,
+    uint32_t stack, void *params, UBaseType_t prio,
+    TaskHandle_t *handle_out, BaseType_t core);
+
+static inline BaseType_t xTaskCreate(TaskFunction_t func, const char *name,
+    uint32_t stack, void *params, UBaseType_t prio, TaskHandle_t *handle_out)
+{
+    return xTaskCreatePinnedToCore(func, name, stack, params, prio, handle_out, 1);
+}
+
+void vTaskSuspend(TaskHandle_t handle);
+void vTaskResume(TaskHandle_t handle);
+
+/* ---------- task notifications -------------------------------------------- */
+
+void xTaskNotifyGive(TaskHandle_t handle);
+uint32_t ulTaskNotifyTake(BaseType_t clear_on_exit, TickType_t timeout);
+
+/* ---------- queues -------------------------------------------------------- */
+
+QueueHandle_t xQueueCreate(UBaseType_t depth, UBaseType_t item_size);
+BaseType_t    xQueueSend(QueueHandle_t q, const void *item, TickType_t ticks);
+BaseType_t    xQueueReceive(QueueHandle_t q, void *buf, TickType_t ticks);
+BaseType_t    xQueueOverwrite(QueueHandle_t q, const void *item);
+
+/* ---------- semaphores ---------------------------------------------------- */
+
+SemaphoreHandle_t xSemaphoreCreateBinary(void);
+SemaphoreHandle_t xSemaphoreCreateMutex(void);
+BaseType_t        xSemaphoreTake(SemaphoreHandle_t sem, TickType_t ticks);
+BaseType_t        xSemaphoreGive(SemaphoreHandle_t sem);
 
 /* ========================================================================== */
 /*  GPIO types                                                                 */

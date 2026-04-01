@@ -19,6 +19,8 @@ set(STUB_SOURCES
     sim/hal_stubs/adc_stub.c
     sim/hal_stubs/uart_stub.c
     sim/hal_stubs/power_monitor_stub.c
+    sim/hal_stubs/freertos_sim.c
+    sim/hal_stubs/vl53l0x_stub.c
 )
 
 # Simulation engine
@@ -33,6 +35,15 @@ set(FW_LOGIC_SOURCES
     ${TALOS_FW}/main/locomotion/balance_control.c
     ${TALOS_FW}/main/arm/arm_control.c
     ${TALOS_FW}/main/arm/ik_solver.c
+    ${TALOS_FW}/main/state_machine/state_machine.c
+    ${TALOS_FW}/main/power/power_management.c
+    ${TALOS_FW}/main/uart_protocol/uart_protocol.c
+    ${TALOS_FW}/main/tasks/state_machine_task.c
+    ${TALOS_FW}/main/tasks/gait_task.c
+    ${TALOS_FW}/main/tasks/balance_task.c
+    ${TALOS_FW}/main/tasks/arm_ctrl_task.c
+    ${TALOS_FW}/main/tasks/power_mon_task.c
+    ${TALOS_FW}/main/tasks/uart_cam_task.c
 )
 
 # Firmware test files (compiled from Project Talos)
@@ -85,6 +96,7 @@ target_include_directories(talos_sim PRIVATE
     ${TALOS_FW}/components/ADC
     ${TALOS_FW}/components/UART
     ${TALOS_FW}/components/power_monitor
+    ${CMAKE_SOURCE_DIR}/../../firmware/espcam/components/VL53L0X
 
     # 5. Firmware application headers
     ${TALOS_FW}/main
@@ -92,6 +104,8 @@ target_include_directories(talos_sim PRIVATE
     ${TALOS_FW}/main/arm
     ${TALOS_FW}/main/state_machine
     ${TALOS_FW}/main/power
+    ${TALOS_FW}/main/tasks
+    ${TALOS_FW}/main/uart_protocol
     ${TALOS_FW}/tests
 )
 
@@ -110,5 +124,5 @@ target_compile_options(talos_sim PRIVATE
     -O2
 )
 
-# Link math library
-target_link_libraries(talos_sim PRIVATE m)
+# Link math and pthread libraries
+target_link_libraries(talos_sim PRIVATE m pthread)
