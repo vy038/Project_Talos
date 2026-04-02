@@ -27,6 +27,22 @@ jobs:
           cp sim/lightsim/Dockerfile .hf_deploy/
           cp -r sim firmware .hf_deploy/
           
+          # Create Hugging Face Space configuration README
+          cat << 'EOF' > .hf_deploy/README.md
+          ---
+          title: LightSim
+          emoji: 🤖
+          colorFrom: blue
+          colorTo: red
+          sdk: docker
+          pinned: false
+          app_port: 7860
+          ---
+          
+          # LightSim
+          Project Talos Web Simulator
+          EOF
+          
           cd .hf_deploy
           git init
           git remote add space https://${{ secrets.HF_USERNAME }}:${HF_TOKEN}@huggingface.co/spaces/${{ secrets.HF_USERNAME }}/${{ secrets.HF_SPACE_NAME }}
