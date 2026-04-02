@@ -10,20 +10,23 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Build context is the Project_Talos repo root
-COPY sim/lightsim/ ./lightsim/
+COPY sim/lightsim/ ./sim/lightsim/
 COPY firmware/ ./firmware/
 
 # Build the C simulator binary
-RUN mkdir -p lightsim/build && \
-    cd lightsim/build && \
+RUN mkdir -p sim/lightsim/build && \
+    cd sim/lightsim/build && \
     cmake .. && \
     make -j$(nproc)
 
 # Install Node.js server deps
-RUN cd lightsim/server && npm install
+RUN cd sim/lightsim/server && npm install
+
+# Fix permissions for Hugging Face user 1000
+RUN chmod -R 777 /app
 
 ENV PORT=7860
 EXPOSE 7860
 
-WORKDIR /app/lightsim/server
+WORKDIR /app/sim/lightsim/server
 CMD ["node", "server.js"]
