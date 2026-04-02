@@ -24,7 +24,8 @@ jobs:
           
           # Create a clean deployment folder to avoid pushing git history and heavy binaries
           mkdir -p .hf_deploy
-          cp -r sim firmware Dockerfile .hf_deploy/
+          cp sim/lightsim/Dockerfile .hf_deploy/
+          cp -r sim firmware .hf_deploy/
           
           cd .hf_deploy
           git init
