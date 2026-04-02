@@ -21,7 +21,14 @@ jobs:
           # This pushes the entire repository to the huggingface space repository
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
-          git remote add space https://huggingface.co/spaces/${{ secrets.HF_USERNAME }}/${{ secrets.HF_SPACE_NAME }}
-          # To authenticate via token
-          git remote set-url space https://${{ secrets.HF_USERNAME }}:${HF_TOKEN}@huggingface.co/spaces/${{ secrets.HF_USERNAME }}/${{ secrets.HF_SPACE_NAME }}
+          
+          # Create a clean deployment folder to avoid pushing git history and heavy binaries
+          mkdir -p .hf_deploy
+          cp -r sim firmware Dockerfile .hf_deploy/
+          
+          cd .hf_deploy
+          git init
+          git remote add space https://${{ secrets.HF_USERNAME }}:${HF_TOKEN}@huggingface.co/spaces/${{ secrets.HF_USERNAME }}/${{ secrets.HF_SPACE_NAME }}
+          git add .
+          git commit -m "Deploy from GitHub Actions"
           git push --force space HEAD:main
