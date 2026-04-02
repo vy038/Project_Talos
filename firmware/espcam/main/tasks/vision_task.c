@@ -19,7 +19,7 @@ void vVisionTask(void *pvParams) {
     size_t bytes_read;
 
     while (1) {
-        // block here until WROOM sends a ping byte — zero CPU cost while waiting
+        // block here until WROOM sends a ping byte, zero CPU cost while waiting
         esp_err_t ret = xUARTRead(&ping, 1, &bytes_read);
         if (ret != ESP_OK || bytes_read == 0 || ping != VISION_PING_BYTE) {
             continue;

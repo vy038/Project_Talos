@@ -15,6 +15,10 @@
 #include "tasks/uart_cam_task.h"
 #include "tasks/balance_task.h"
 
+// select test if testing
+#define TEST_SELECT TEST_NONE
+#include "tests.h"
+
 // IPC object definitions (extern declared in task_config.h)
 QueueHandle_t xFrameQueue;
 QueueHandle_t xPowerQueue;
@@ -22,10 +26,6 @@ SemaphoreHandle_t xArmSemaphore;
 SemaphoreHandle_t xI2CMutex;
 TaskHandle_t xGaitTaskHandle;
 TaskHandle_t xUartCamTaskHandle;
-
-// select test if testing
-#define TEST_SELECT TEST_NONE
-#include "tests.h"
 
 void app_main(void) {
 

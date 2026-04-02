@@ -22,8 +22,8 @@ static const char *TAG = "ARM";
 #define ARM_ELBOW_CH     8
 #define ARM_GRIPPER_CH   9
 
-#define ARM_STEP_DEG         1.0f   // arm joints (base, shoulder, elbow)
-#define ARM_GRIPPER_STEP_DEG 4.0f   // gripper servo rate is faster: 170 deg in ~850ms vs regular 3.4s
+#define ARM_STEP_DEG         0.25f   // arm joints (base, shoulder, elbow)
+#define ARM_GRIPPER_STEP_DEG 1.0f   // gripper servo rate is faster: 170 deg in ~3.4s vs regular 13.6s
 #define ANGLE_TOLERANCE      2.0f
 #define I2C_RETRIES          3
 
@@ -89,6 +89,8 @@ esp_err_t xArmSetAngleWithRetry(uint8_t channel, uint8_t angle) {
     return ret;
 }
 
+
+// TODO: calibrate arm properly
 esp_err_t xArmUpdate(void) {
     if (current_state != ARM_MOVING) {
         return ESP_OK;

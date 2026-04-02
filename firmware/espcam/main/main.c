@@ -15,7 +15,7 @@
 
 static const char *TAG = "MAIN";
 
-#define BALL_REAL_RADIUS_MM     20.0f
+#define BALL_RADIUS_MM     20.0f
 
 void app_main(void) {
     esp_err_t ret = xUARTInit();
@@ -30,7 +30,7 @@ void app_main(void) {
         return;
     }
 
-    vVisionSetBallRadius(BALL_REAL_RADIUS_MM);
+    vVisionSetBallRadius(BALL_RADIUS_MM);
 
     if (TEST_SELECT != TEST_NONE) {
         run_test();
