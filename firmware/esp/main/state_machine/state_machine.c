@@ -45,8 +45,8 @@ static void transition(robot_state_t new_state) {
 // TODO: calibrate these by manually posing the arm and recording angles
 static const arm_angles_t arm_grab_ready = {
     .base     = 90.0f,
-    .shoulder = 55.0f,
-    .elbow    = 65.0f,
+    .shoulder = 50.0f,
+    .elbow    = 60.0f,
     .gripper  = 170.0f,
 };
 

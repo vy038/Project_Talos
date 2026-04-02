@@ -36,7 +36,7 @@
 #define CAM_FRAME_HEIGHT    240
 
 // if ball center is within this many px of frame center, consider it "centered"
-#define BALL_CENTER_TOLERANCE_X     40
+#define BALL_CENTER_TOLERANCE_X     25
 
 // tof threshhold of VL53L0X (mm) when robot is close enough to attempt grab (r field of UART packet)
 // TODO: calibrate by positioning ball at grab distance and reading ToF

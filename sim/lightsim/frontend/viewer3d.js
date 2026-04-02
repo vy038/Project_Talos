@@ -1494,7 +1494,7 @@ function animate() {
             } else {
                 // Ball out of FOV — reset beam to max range
                 const beamPos = tofBeamGeom.attributes.position;
-                beamPos.setXYZ(1, 0, 0, 200);
+                beamPos.setXYZ(1, 0, 0, 2000 / SIM_MM_PER_PX);
                 beamPos.needsUpdate = true;
                 const noDet = sendNoDetection();
                 window.SimWS.send(noDet);
@@ -1505,7 +1505,7 @@ function animate() {
             // Ball inactive but camera still needed — send no-detection to firmware
             camTickCounter = 0;
             const beamPos = tofBeamGeom.attributes.position;
-            beamPos.setXYZ(1, 0, 0, 200);
+            beamPos.setXYZ(1, 0, 0, 2000 / SIM_MM_PER_PX);
             beamPos.needsUpdate = true;
             const noDet = sendNoDetection();
             window.SimWS.send(noDet);
@@ -1515,7 +1515,7 @@ function animate() {
             // Camera not needed (state 7+) — just reset beam visually, no UART packets
             camTickCounter = 0;
             const beamPos = tofBeamGeom.attributes.position;
-            beamPos.setXYZ(1, 0, 0, 200);
+            beamPos.setXYZ(1, 0, 0, 2000 / SIM_MM_PER_PX);
             beamPos.needsUpdate = true;
         }
     }

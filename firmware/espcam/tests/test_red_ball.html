@@ -122,7 +122,7 @@
     <div class="panel">
       <h2>Distance Estimate</h2>
       <div class="stat-row"><span class="stat-label">Estimated dist</span><span class="stat-val" id="s-dist">—</span></div>
-      <div class="stat-row"><span class="stat-label">TOF available</span> <span class="stat-val" id="s-tof">—</span></div>
+      <div class="stat-row"><span class="stat-label">TOF dist</span>      <span class="stat-val" id="s-tof">—</span></div>
     </div>
 
     <div class="panel">
@@ -225,7 +225,7 @@ function updateStats(d) {
   document.getElementById("s-brg").textContent = detected ? `${d.brg_deg.toFixed(2)}°` : "—";
 
   document.getElementById("s-dist").textContent = detected && d.dist_mm > 0 ? `${d.dist_mm.toFixed(0)} mm` : "—";
-  document.getElementById("s-tof").textContent  = d.tof ? "YES" : "NO";
+  document.getElementById("s-tof").textContent  = d.tof ? `${d.tof} mm` : "—";
 
   // packet bytes
   const pktEl = document.getElementById("pkt-bytes");
