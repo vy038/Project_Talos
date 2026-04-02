@@ -26,7 +26,8 @@ const SimState = {
 window.SimWS = { send: function() {} };
 
 (function connectWebSocket() {
-    const wsUrl = `ws://${window.location.host}`;
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}`;
     const statusEl = document.getElementById('ws-status');
     const fpsEl = document.getElementById('fps-counter');
 

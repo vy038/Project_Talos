@@ -422,13 +422,29 @@ function simulateCameraDetection(ballPos) {
     const distSim = ballRel.length();
     const distMm = distSim * SIM_MM_PER_PX;
 
-    // VL53L0X ToF — ray from tofGroup origin along +Z in world space.
-    // The sensor is co-located with the camera (same forward direction).
-    // We re-use the camera's forward vector and just measure ball distance
-    // along that axis, clamped to sensor range (20–2000mm).
+    // VL53L0X ToF — ray-sphere intersection in camera-local space.
+    // tofGroup sits at (0, -10, 10) within camGroup local, beam fires along local +Z.
+    // ballLocal is already in camera-local space, so no quaternion needed.
+    const TOF_LOCAL_ORIGIN = new THREE.Vector3(0, -10, 10); // tofGroup.position
+    const oc = TOF_LOCAL_ORIGIN.clone().sub(ballLocal);
+    // dir is (0,0,1) so dot product simplifies: b = 2*oc.z, dir·dir = 1
+    const b = 2 * oc.z;
+    const c = oc.dot(oc) - ballRadius * ballRadius;
+    const disc = b * b - 4 * c;
+
+    const TOF_MAX_SIM = 2000 / SIM_MM_PER_PX;
+    let tofDistSim;
+    if (disc < 0) {
+        tofDistSim = TOF_MAX_SIM; // beam misses ball
+    } else {
+        const t1 = (-b - Math.sqrt(disc)) / 2;
+        const t2 = (-b + Math.sqrt(disc)) / 2;
+        const t = (t1 > 0) ? t1 : (t2 > 0 ? t2 : -1);
+        tofDistSim = (t > 0 && t < TOF_MAX_SIM) ? t : TOF_MAX_SIM;
+    }
+
     const tofWorldPos = new THREE.Vector3();
     tofGroup.getWorldPosition(tofWorldPos);
-    const tofDistSim = Math.max(0, tofWorldPos.distanceTo(ballWorld) - ballRadius);
     const tofDistMm = Math.round(Math.min(2000, Math.max(20, tofDistSim * SIM_MM_PER_PX)));
 
     // Update beam length (sim units)

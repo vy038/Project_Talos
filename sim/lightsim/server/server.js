@@ -20,7 +20,6 @@ const net = require('net');
 const INJECTION_PORT = 9998;
 
 const PORT = process.env.PORT || 3000;
-const CAM_WS_PORT = 8765;
 const SIM_PATH = path.join(__dirname, '..', 'build', 'talos_sim');
 const FRONTEND_PATH = path.join(__dirname, '..', 'frontend');
 const ESPCAM_TESTS_PATH = path.join(__dirname, '..', '..', '..', 'firmware', 'espcam', 'tests');
@@ -40,12 +39,26 @@ const server = http.createServer(app);
 // WebSocket server
 // ============================================================================
 
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({ noServer: true });
 let latestState = null;
 
-// Camera WebSocket server (port 8765) — feeds test_red_ball.html
-const camWss = new WebSocketServer({ port: CAM_WS_PORT });
+// Camera WebSocket server (path /camera) — feeds test_red_ball.html
+const camWss = new WebSocketServer({ noServer: true });
 let camFrameCount = 0;
+
+// URL routing for WebSockets over the single HTTP port
+server.on('upgrade', (request, socket, head) => {
+    const pathname = request.url;
+    if (pathname === '/camera') {
+        camWss.handleUpgrade(request, socket, head, (ws) => {
+            camWss.emit('connection', ws, request);
+        });
+    } else {
+        wss.handleUpgrade(request, socket, head, (ws) => {
+            wss.emit('connection', ws, request);
+        });
+    }
+});
 
 function broadcastCamera(data) {
     const json = JSON.stringify(data);
@@ -302,11 +315,10 @@ app.get('/api/status', (req, res) => {
 // Start
 // ============================================================================
 
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
     console.log(`\n=== Lightsim Server ===`);
     console.log(`Frontend: http://localhost:${PORT}`);
-    console.log(`WebSocket: ws://localhost:${PORT}`);
-    console.log(`Camera WS: ws://localhost:${CAM_WS_PORT}`);
+    console.log(`WebSocket: ws://localhost:${PORT} (Main), ws://localhost:${PORT}/camera (Camera)`);
     console.log(`API: http://localhost:${PORT}/api/status\n`);
     startSimulator();
 });

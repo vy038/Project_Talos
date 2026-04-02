@@ -22,7 +22,8 @@ RUN mkdir -p lightsim/build && \
 # Install Node.js server deps
 RUN cd lightsim/server && npm install
 
-EXPOSE 3000
+ENV PORT=7860
+EXPOSE 7860
 
 WORKDIR /app/lightsim/server
 CMD ["node", "server.js"]

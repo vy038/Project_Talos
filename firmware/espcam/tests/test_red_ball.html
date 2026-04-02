@@ -148,7 +148,9 @@
 </div>
 
 <script>
-const WS_URL = "ws://localhost:8765";
+const isSerialBridge = window.location.port === '8000';
+const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+const WS_URL = isSerialBridge ? "ws://localhost:8765" : `${protocol}//${window.location.host}/camera`;
 const CAM_W = 320, CAM_H = 240;
 
 const canvas = document.getElementById("cam-canvas");
