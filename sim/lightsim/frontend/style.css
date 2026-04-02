@@ -3,11 +3,11 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
 :root {
-    --bg-0: #0b0d10;
-    --bg-1: #0e1117;
-    --bg-2: #141820;
-    --bg-3: #1a2030;
-    --bg-4: #1e2538;
+    --bg-0: #000000;
+    --bg-1: #050608;
+    --bg-2: #0a0b0e;
+    --bg-3: #0f1116;
+    --bg-4: #14161c;
     --border: #1e2738;
     --border-hi: #2d3d58;
     --border-active: #3b82f6;

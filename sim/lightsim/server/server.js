@@ -224,22 +224,26 @@ function startSimulator() {
 // Recompile and restart ("flash")
 app.post('/api/compile', (req, res) => {
     console.log('[API] Recompile requested...');
-    try {
-        // Kill current sim
-        killSimulator();
+    // Kill current sim forcefully immediately
+    if (simProcess) {
+        try { simProcess.kill('SIGKILL'); } catch (e) {}
+        simProcess = null;
+    }
+    killSimulator(); // Cleanup sockets
 
-        // Rebuild
-        const buildDir = path.join(__dirname, '..', 'build');
-        execSync('cmake --build . -- -j$(nproc)', { cwd: buildDir, stdio: 'pipe', timeout: 120000 });
+    // Rebuild asynchronously (doesn't block Node event loop)
+    const buildDir = path.join(__dirname, '..', 'build');
+    const { exec } = require('child_process');
+    
+    exec('cmake --build . -- -j$(nproc)', { cwd: buildDir, timeout: 120000 }, (error, stdout, stderr) => {
+        if (error) {
+            console.error(`[API] Build failed: ${error.message}`);
+            return res.status(500).json({ status: 'error', message: stderr || error.message });
+        }
         console.log('[API] Build succeeded');
-
-        // Restart
         startSimulator();
         res.json({ status: 'ok', message: 'Recompiled and restarted' });
-    } catch (err) {
-        console.error(`[API] Build failed: ${err.message}`);
-        res.status(500).json({ status: 'error', message: err.stderr?.toString() || err.message });
-    }
+    });
 });
 
 // Build and inject an 11-byte detection UART packet into the C simulator stdin.
@@ -286,8 +290,23 @@ app.post('/api/command', (req, res) => {
 // Run test sequence
 app.post('/api/test', (req, res) => {
     const testName = req.body.test || 'gait';
-    injWrite(JSON.stringify({ type: 'test', test: testName }) + '\n');
-    res.json({ status: 'ok', test: testName });
+    
+    // Forcefully wipe the simulator clean before the test
+    if (simProcess) {
+        try { simProcess.kill('SIGKILL'); } catch (e) {}
+        simProcess = null;
+    }
+    killSimulator();
+    
+    // Boot a fresh instance
+    startSimulator();
+
+    // Wait 1 second for boot and socket connection, then inject the test command
+    setTimeout(() => {
+        injWrite(JSON.stringify({ type: 'test', test: testName }) + '\n');
+    }, 1000);
+
+    res.json({ status: 'ok', test: testName, message: 'Simulator wiped and test scheduled' });
 });
 
 // Force state machine transition

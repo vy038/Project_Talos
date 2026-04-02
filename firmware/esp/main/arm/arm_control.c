@@ -23,7 +23,7 @@ static const char *TAG = "ARM";
 #define ARM_GRIPPER_CH   9
 
 #define ARM_STEP_DEG         0.25f   // arm joints (base, shoulder, elbow)
-#define ARM_GRIPPER_STEP_DEG 1.0f   // gripper servo rate is faster: 170 deg in ~3.4s vs regular 13.6s
+#define ARM_GRIPPER_STEP_DEG 4.0f   // gripper servo rate is faster: 170 deg in ~0.85s vs regular 13.6s
 #define ANGLE_TOLERANCE      2.0f
 #define I2C_RETRIES          3
 
