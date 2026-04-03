@@ -55,6 +55,7 @@ Three view modes: **Debug** (servo/IMU/I2C dashboard), **2D** (top-down canvas),
 | Current sensing | ACS712 |
 | Power | 3S2P 18650 + BMS, UBEC for servo rail, buck converters for logic |
 
+
 ![Wiring diagram](hardware/diagrams/talos_wiring.png)
 
 ---
@@ -69,26 +70,10 @@ Three view modes: **Debug** (servo/IMU/I2C dashboard), **2D** (top-down canvas),
 
 ### RTOS Architecture
 
+There are two ESP32s, each communicating via UART. One manages just the camera and ball detection, and the other manages everything else: state machine, servo commands, etc.
+
 I used FreeRTOS because concurrent tasks let everything run in real time. Instead of a linear system where tasks block each other, most of the state updates happen in parallel. Deciding what gets a task was simple: figure out what needs to run at the same time, assign priorities, map out shared resources, then wire up queues and semaphores where ordering matters.
 
-```
-┌─────────────────┐      ┌──────────────┐     ┌─────────────────┐
-│  state_machine  │────▶│  uart_cam    │───▶│  ESP32-S3-CAM   │
-│     P7 · 50ms   │      │  P5          │     │  vision task    │
-└────────┬────────┘      └──────────────┘     └─────────────────┘
-         │
-    ┌────┴────┐
-    ▼         ▼
-┌────────┐  ┌──────────┐
-│ gait   │  │ arm_ctrl │   both require xI2CMutex → PCA9685
-│ P5·20ms│  │  P6      │
-└────────┘  └──────────┘
-    ▲
-┌───┴─────┐  ┌─────────────┐
-│ balance │  │ power_mon   │  P1 normally, escalates to max on issue
-│ P5·20ms │  │ P1 · 20ms   │
-└─────────┘  └─────────────┘
-```
 
 **Shared IPC** - `task_config.h`
 ```c
@@ -98,17 +83,15 @@ SemaphoreHandle_t xArmSemaphore;       // binary, arm wakes only when state mach
 SemaphoreHandle_t xI2CMutex;           // binary, guards PCA9685 bus
 TaskHandle_t      xUartCamTaskHandle;  // direct notify via cam ping
 ```
+![Task Diagram](https://github.com/user-attachments/assets/d4940cef-9482-428c-83ac-3a2b98442957)
 
 ---
 
 ### Tasks
 
-![Task Diagram](https://github.com/user-attachments/assets/d4940cef-9482-428c-83ac-3a2b98442957)
+**State machine** `P4 · 50ms` - the essential task that manages everything in the system. It is the one that manages the camera ping every time it cycles through. It is the middle layer that manages the input from the camera and the power monitoring task. It decides what gait state for it to be in, decides positioning of arm, processes the ball detection data, and decides if the power is supposed to be in emergency state or not.
 
-
-**State machine** `P7 · 50ms` - the essential task that manages everything in the system. It is the one that manages the camera ping every time it cycles through. It is the middle layer that manages the input from the camera and the power monitoring task. It decides what gait state for it to be in, decides positioning of arm, processes the ball detection data, and decides if the power is supposed to be in emergency state or not.
-
-**UART cam** `P5` - simple: it will get called via `xUartCamTaskHandle` from the state machine, then it will send a distinct signal via UART to the ESP32-S3-CAM, and then it will await the full packet response, and parse with `bUARTProtoFeedBuf`. It will then send the information back into the state machine via a frame queue (only holds one frame to prevent stale frames) for it to process.
+**UART cam** `P3 · 50ms (indirect)` - simple: it will get called via `xUartCamTaskHandle` from the state machine, then it will send a distinct signal via UART to the ESP32-S3-CAM, and then it will await the full packet response, and parse with `bUARTProtoFeedBuf`. It will then send the information back into the state machine via a frame queue (only holds one frame to prevent stale frames) for it to process.
 
 **Gait** `P5 · 20ms` - updates the gait state every 20ms to keep the gait up and running asynchronously while the state machine regularly changes the state. The update command decides gaits for legs, computes new targets and new states for each one. Gait has many types, including wave, ripple, and tripod, with speed being configurable in the update (speed should go down as ball gets closer). Requires I2C bus mutex in order to send commands.
 
@@ -119,16 +102,6 @@ TaskHandle_t      xUartCamTaskHandle;  // direct notify via cam ping
 **Power monitor** `P1 · 20ms` - runs in the background every 20ms at priority 1. It reads the ACS712 current sensor and uses a consecutive-count filter. To prevent false positives, it needs 2-3 high readings in a row before flagging a problem, which filters out normal servo inrush spikes that can read way above normal for a short burst on startup. When it does detect a real issue, it escalates its own priority up to the max so it can immediately post the emergency status to the queue without waiting behind any other task. The state machine picks it up at the top of its next 50ms cycle and transitions to EMERGENCY.
 
 **Vision task (S3-CAM)** - will receive the unique ping, register that as a signal, and then run the task based on it. It will snap a picture quickly, then run the VL53L0X if available to sense accurate depth. It will first detect any red centroid objects in the frame, then try to estimate the difference from the center of the frame to the center of the centroid. Radius will be estimated based on a known value, then distance can be estimated. If the ball is right in front of the robot, VL53 is run so depth can be measured accurately. It will then put that into a packet form (`vUARTProtoBuildDetection`) to be sent to the waiting UART task on the ESP32-WROOM.
-
----
-
-## Walkthrough of Design
-
-There are two ESP32s, each communicating via UART. One manages just the camera and ball detection, and the other manages everything else: state machine, servo commands, etc.
-
-I decided to implement a FreeRTOS architecture because it allows for concurrent tasks, and lets everything run in real time. For example, rather than having a linear system where information is sent in a linear fashion, and tasks have to wait in order to be updated, in this task environment, most of it is updated in real time, and maximizes the use of the ESP32's cores. I needed something clean that works fast.
-
-How I decided what gets a task is simple: I broke down the logic chain onto steps, and decided which of these steps needed to be run at the same time. From there, I was able to determine the priority of those tasks and what resources they shared, and also whether or not queues or semaphores are needed. I could also see what tasks depended on each other so there was some sort of linearity if needed, but others can run in real time as well.
 
 ---
 
