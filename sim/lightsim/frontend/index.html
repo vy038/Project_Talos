@@ -26,7 +26,10 @@
                 <span>WebSocket Bridge</span>
                 <span>Three.js Renderer</span>
             </div>
-            <button id="btn-launch" class="splash-btn">Compile &amp; Launch</button>
+            <div style="display: flex; gap: 12px; justify-content: center; margin-bottom: 14px;">
+                <button id="btn-launch" class="splash-btn">Compile &amp; Launch</button>
+                <button id="btn-tutorial" class="splash-btn btn-secondary">Interactive Tutorial</button>
+            </div>
             <div id="splash-status" class="splash-status"></div>
         </div>
     </div>
@@ -53,11 +56,9 @@
                 <button class="ptab active" data-panel="viewcam">CAM</button>
             </div>
             <div class="topbar-divider"></div>
-            <div id="state-badge-wrap">
-                <span class="state-label">STATE</span>
-                <span id="state-badge" class="state-badge state-idle">OFFLINE</span>
-            </div>
             <div class="topbar-right">
+                <span id="state-badge" class="state-badge state-idle" style="margin-right:14px; font-size:13px; font-weight:700; letter-spacing:0.08em; border:none; padding:0;">N/A</span>
+                <button id="btn-restart-tutorial" class="btn btn-secondary" style="margin-right: 12px; font-size: 8px;">Restart Tutorial</button>
                 <div class="status-group">
                     <span class="status-dot" id="ws-dot"></span>
                     <span id="ws-status" class="disconnected">OFFLINE</span>
@@ -98,7 +99,7 @@
                                     <button id="btn-recompile" class="btn btn-full">Recompile &amp; Flash</button>
                                 </div>
                                 <div class="btn-row" style="margin-top:4px">
-                                    <button id="btn-reset" class="btn btn-full btn-secondary">Reset to Neutral</button>
+                                    <button id="btn-reset" class="btn btn-full btn-secondary">Reset &amp; Kill</button>
                                 </div>
                             </div>
                         </div>
@@ -268,10 +269,29 @@
 
     </div><!-- #app -->
 
+    <!-- ── Tutorial Overlay Elements ────────────────────────────────────── -->
+    <div id="tutorial-overlay"></div>
+    <div id="tutorial-spotlight" class="tutorial-spotlight" style="display: none;"></div>
+    <div id="tutorial-dialog">
+        <div class="tutorial-title">
+            <span id="tut-title-text">Tutorial</span>
+            <button id="tut-btn-close" class="tutorial-close">✕</button>
+        </div>
+        <div id="tut-body-text" class="tutorial-text"></div>
+        <div class="tutorial-controls">
+            <span id="tut-progress" class="tutorial-progress">1 / 5</span>
+            <div class="tutorial-btn-row">
+                <button id="tut-btn-prev" class="btn btn-secondary">Back</button>
+                <button id="tut-btn-next" class="btn btn-accent">Next</button>
+            </div>
+        </div>
+    </div>
+
     <script src="websocket.js"></script>
     <script src="debugview.js"></script>
     <script src="viewer2d.js"></script>
     <script type="module" src="viewer3d.js"></script>
+    <script src="tutorial.js"></script>
     <script>
         // ── Time scale ──────────────────────────────────────────────────────
         window.TimeScale = 1.0;
@@ -395,6 +415,9 @@
             document.getElementById('speed-slider').value = 50;
             document.getElementById('speed-val').textContent = '50%';
             if (window.resetRobotPosition) window.resetRobotPosition();
+            
+            // Kill simulator (go offline)
+            fetch('/api/kill', { method: 'POST' }).catch(() => {});
         });
 
         // ── D-pad & keyboard movement ────────────────────────────────────────
@@ -548,7 +571,10 @@
 
         // ── IK cursor toggle ────────────────────────────────────────────────
         document.getElementById('ik-mode-toggle').addEventListener('change', function() {
-            if (window.IKCursor) window.IKCursor.active = this.checked;
+            if (window.IKCursor) {
+                window.IKCursor.active = this.checked;
+                if (this.checked) window.IKCursor.needsSnap = true;
+            }
         });
 
         // ── Arm sliders ──────────────────────────────────────────────────────

@@ -814,7 +814,16 @@ function generateGaitAngles() {
 // ============================================================================
 
 function updateRobot(state) {
-    if (!state) return;
+    // When no sim data, render the current smoothed state (neutral after reset)
+    const usingNeutral = !state;
+    if (!state) {
+        state = {
+            legs: { hip: [...smoothed.hip], knee: [...smoothed.knee] },
+            arm: { base: smoothed.arm.base, shoulder: smoothed.arm.shoulder, elbow: smoothed.arm.elbow, gripper: smoothed.arm.gripper },
+            pos: { x: 0, y: 0, yaw: 0 },
+            imu: { roll: 0, pitch: 0 }
+        };
+    }
 
     let sum_dx_r = 0, sum_dx_l = 0;
     let count_r = 0, count_l = 0;
@@ -931,12 +940,13 @@ function updateRobot(state) {
         ? { base: window.ArmControl.base, shoulder: window.ArmControl.shoulder, elbow: window.ArmControl.elbow, gripper: window.ArmControl.gripper }
         : (window.IKCursor.active ? null : state.arm);
 
-    // IK cursor: track gripper tip when active and not dragging
-    if (window.IKCursor.active && !window.IKCursor.dragging) {
+    // IK cursor: snap to gripper tip only when newly activated
+    if (window.IKCursor.active && window.IKCursor.needsSnap) {
         const tipWorld = new THREE.Vector3();
         gripTipMarker.getWorldPosition(tipWorld);
         ikCursorMesh.position.copy(tipWorld);
         window.IKCursor.worldPos.copy(tipWorld);
+        window.IKCursor.needsSnap = false;
     }
 
     if (armSource) {
@@ -1248,6 +1258,7 @@ let activeDrag = null; // 'ball', 'ik-x', 'ik-y', 'ik-z', 'ik', or null
 let ikDragAxis = null; // THREE.Vector3 for axis-constrained drag direction
 let ikDragOrigin = null; // cursor position at drag start
 let ikLastMouse = { x: 0, y: 0 }; // previous mouse NDC for delta-based axis drag
+let ikDragOffset = new THREE.Vector3(); // offset for XZ plane drag
 
 // Helper: find closest point on a line to a ray (for axis-constrained dragging)
 
@@ -1292,6 +1303,12 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
             activeDrag = 'ik';
             window.IKCursor.dragging = true;
             dragPlaneY = ikCursorMesh.position.y;
+            
+            const plane = new THREE.Plane();
+            plane.setFromNormalAndCoplanarPoint(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, dragPlaneY, 0));
+            raycaster.ray.intersectPlane(plane, ikDragOffset);
+            if (ikDragOffset) ikDragOffset.sub(ikCursorMesh.position);
+
             controls.enabled = false;
             e.preventDefault();
             return;
@@ -1388,8 +1405,8 @@ renderer.domElement.addEventListener('pointermove', (e) => {
         }
     } else if (activeDrag === 'ik') {
         // Free drag: move IK cursor on horizontal XZ plane
-        ikCursorMesh.position.x = intersect.x;
-        ikCursorMesh.position.z = intersect.z;
+        ikCursorMesh.position.x = intersect.x - (ikDragOffset ? ikDragOffset.x : 0);
+        ikCursorMesh.position.z = intersect.z - (ikDragOffset ? ikDragOffset.z : 0);
         solveAndApplyIK();
     }
 });
@@ -1455,6 +1472,8 @@ window.resetRobotPosition = function() {
     if (window.PhysicsBall) {
         window.PhysicsBall.active = false;
     }
+    // Clear any cached websocket state so the neutral pose holds
+    latestState = null;
 };
 
 // ============================================================================

@@ -307,8 +307,8 @@ body {
 }
 .pane.active { display: flex; flex: 1; }
 
-#pane-debug.active   { flex: 3; min-height: 80px; }
-#pane-controls.active { flex: 2; min-height: 80px; }
+#pane-debug.active   { flex: 1; min-height: 80px; }
+#pane-controls.active { flex: 1; min-height: 80px; }
 #pane-view3d.active, #pane-view2d.active { flex: 1; }
 
 .pane-header {
@@ -603,3 +603,89 @@ body {
 ::-webkit-scrollbar-track { background: var(--bg-0); }
 ::-webkit-scrollbar-thumb { background: var(--border-hi); }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* ── Interactive Tutorial Wizard ───────────────────────────────────── */
+#tutorial-overlay {
+    position: fixed;
+    top: 0; left: 0; width: 100vw; height: 100vh;
+    z-index: 2000;
+    pointer-events: none; /* Let clicks pass through to spotlighted elements if needed, or we explicitly block */
+    opacity: 0; transition: opacity 0.3s ease; display: none;
+}
+#tutorial-overlay.active { opacity: 1; display: block; }
+
+.tutorial-spotlight {
+    position: fixed;
+    border-radius: 4px;
+    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.75), 0 0 15px var(--accent-glow);
+    z-index: 2001;
+    transition: all 0.4s cubic-bezier(0.2, 0, 0.2, 1);
+    pointer-events: none;
+}
+.tutorial-spotlight.soft {
+    box-shadow: none;
+    border: 2px solid var(--accent);
+    box-sizing: border-box;
+}
+
+#tutorial-dialog {
+    position: fixed;
+    z-index: 2002;
+    background: var(--bg-1);
+    border: 1px solid var(--border-active);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.8), 0 0 0 1px var(--bg-0);
+    width: 320px;
+    padding: 16px;
+    display: none;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: all 0.4s cubic-bezier(0.2, 0, 0.2, 1);
+    pointer-events: auto;
+}
+#tutorial-dialog.active {
+    display: flex;
+    flex-direction: column;
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.tutorial-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: 0.1em;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.tutorial-close {
+    background: transparent; border: none; color: var(--text-muted); cursor: pointer;
+    font-size: 12px; margin-top: -4px; transition: color 0.1s;
+}
+.tutorial-close:hover { color: var(--danger); }
+
+.tutorial-text {
+    font-size: 11px;
+    color: var(--text-primary);
+    line-height: 1.5;
+    margin-bottom: 16px;
+    font-family: sans-serif;
+}
+
+.tutorial-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+}
+.tutorial-progress {
+    font-size: 9px;
+    color: var(--text-dim);
+    letter-spacing: 0.05em;
+}
+.tutorial-btn-row {
+    display: flex; gap: 8px;
+}

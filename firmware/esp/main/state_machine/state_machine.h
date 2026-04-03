@@ -46,7 +46,7 @@
 #define BALL_APPROACH_FAR_MM        800
 
 // approximate camera horizontal FOV (degrees), used to convert ball_x pixel offset to arm base rotation angle during grab prep
-// OV2640 QVGA ≈ 62°.
+// OV2640 QVGA ≈ 62 degrees
 #define CAM_HFOV_DEG                62.0f
 
 // factor on the pixel→angle conversion for grab prep base rotation

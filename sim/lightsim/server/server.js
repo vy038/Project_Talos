@@ -279,6 +279,18 @@ app.post('/api/inject/detection', (req, res) => {
     }
 });
 
+// Kill Simulator gracefully
+app.post('/api/kill', (req, res) => {
+    killSimulator();
+    res.json({ status: 'ok', message: 'Simulator killed' });
+});
+
+// Start simulator using existing binary (no recompile)
+app.post('/api/start', (req, res) => {
+    startSimulator();
+    res.json({ status: 'ok', message: 'Simulator started' });
+});
+
 // Movement command (from D-pad / keyboard)
 let latestCommand = { type: 'move', command: 'stop', speed: 0, gait: 0 };
 app.post('/api/command', (req, res) => {
@@ -339,7 +351,7 @@ server.listen(PORT, '0.0.0.0', () => {
     console.log(`Frontend: http://localhost:${PORT}`);
     console.log(`WebSocket: ws://localhost:${PORT} (Main), ws://localhost:${PORT}/camera (Camera)`);
     console.log(`API: http://localhost:${PORT}/api/status\n`);
-    startSimulator();
+    console.log('[SIM] Waiting for launch command from UI...');
 });
 
 // Cleanup on exit

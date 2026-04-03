@@ -45,8 +45,8 @@ static void transition(robot_state_t new_state) {
 // TODO: calibrate these by manually posing the arm and recording angles
 static const arm_angles_t arm_grab_ready = {
     .base     = 90.0f,
-    .shoulder = 50.0f,
-    .elbow    = 60.0f,
+    .shoulder = 55.0f,
+    .elbow    = 65.0f,
     .gripper  = 170.0f,
 };
 
@@ -165,13 +165,12 @@ static void handle_align(void) {
 
 static void handle_approach(void) {
     set_gait_if_needed(GAIT_TRIPOD);
-    // Use a moderate constant speed. ToF only fires when beam intersects ball,
-    // so it can't be used as a general proximity proxy during the whole approach.
+    // use moderate speed. ToF only fires when beam intersects ball
     float walk_speed = 0.3f;
     if (last_detection.ball_radius > 0 && last_detection.ball_radius < BALL_APPROACH_FAR_MM) {
-        // ToF beam is actively hitting the ball — scale down as it gets closer
+        // ToF beam is actively hitting the ball, scale down speed as it gets closer
         float proximity = 1.0f - (float)last_detection.ball_radius / (float)BALL_APPROACH_FAR_MM;
-        walk_speed = 0.3f - (0.15f * proximity);  // 0.3 → 0.15 as ball enters beam range
+        walk_speed = 0.3f - (0.15f * proximity);
         if (walk_speed < 0.1f) walk_speed = 0.1f;
     }
 
