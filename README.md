@@ -7,6 +7,10 @@
 
 Scorpion-style hexapod with a 3-DOF arm and computer vision. Wanted to build something that required real-time control, inverse kinematics, and vision processing on embedded hardware. Runs on dual ESP32s (WROOM for motors, S3 for camera) with bare metal C and FreeRTOS.
 
+![Talos Hexapod](https://github.com/user-attachments/assets/0dd7f2fe-0777-488d-a81b-4337134ee4a9)
+
+[![Gait Demo](https://github.com/user-attachments/assets/6a793852-d109-4819-b088-19f9e7e194fe)](https://github.com/user-attachments/assets/25aa7fce-c83b-4c4d-9409-9fcc3f92da20)
+
 ## Status
 
 - Arm kinematics (tested, working)
@@ -19,6 +23,8 @@ Scorpion-style hexapod with a 3-DOF arm and computer vision. Wanted to build som
 ---
 
 ## Simulator
+
+<img width="1916" height="996" alt="image" src="https://github.com/user-attachments/assets/13be677a-26a8-42ef-a836-937a87fef0af" />
 
 **[Try it live →](https://huggingface.co/spaces/vy739/talos-lightsim)**
 
@@ -48,6 +54,8 @@ Three view modes: **Debug** (servo/IMU/I2C dashboard), **2D** (top-down canvas),
 | IMU | MPU6050 |
 | Current sensing | ACS712 |
 | Power | 3S2P 18650 + BMS, UBEC for servo rail, buck converters for logic |
+
+![Wiring diagram](hardware/diagrams/talos_wiring.png)
 
 ---
 
@@ -82,7 +90,7 @@ I used FreeRTOS because concurrent tasks let everything run in real time. Instea
 └─────────┘  └─────────────┘
 ```
 
-**Shared IPC** — `task_config.h`
+**Shared IPC** - `task_config.h`
 ```c
 QueueHandle_t     xCamFrameQueue;      // depth=1, stale frames are worse than no frames
 QueueHandle_t     xPowerEventQueue;    // depth=4
@@ -91,7 +99,12 @@ SemaphoreHandle_t xI2CMutex;           // binary, guards PCA9685 bus
 TaskHandle_t      xUartCamTaskHandle;  // direct notify via cam ping
 ```
 
+---
+
 ### Tasks
+
+![Task Diagram](https://github.com/user-attachments/assets/d4940cef-9482-428c-83ac-3a2b98442957)
+
 
 **State machine** `P7 · 50ms` - the essential task that manages everything in the system. It is the one that manages the camera ping every time it cycles through. It is the middle layer that manages the input from the camera and the power monitoring task. It decides what gait state for it to be in, decides positioning of arm, processes the ball detection data, and decides if the power is supposed to be in emergency state or not.
 
@@ -126,6 +139,10 @@ BOOT -> IDLE -> SEARCH -> APPROACH -> GRAB -> DONE
                                                |
                                           EMERGENCY (any state, power fault)
 ```
+
+
+![State Flowchart](state_flowchart.png)
+
 
 Robot boots up, the hardware is all initialized in main, and then all tasks are launched.
 
