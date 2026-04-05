@@ -653,7 +653,8 @@ function ikSolveFromWorld(cursorWorld) {
     const beta = Math.acos(Math.max(-1, Math.min(1, cosBeta)));
 
     const shoulderRad = Math.atan2(r, h) - beta;
-    const shoulderDeg = shoulderRad * 180 / Math.PI + 90;
+    // Negate: shoulder rotation in scene is -(deg-90)*PI/180, so output must be negated
+    const shoulderDeg = -shoulderRad * 180 / Math.PI + 90;
 
     const elbowDeg = (Math.PI - gamma) * 180 / Math.PI + 30;
 
@@ -940,13 +941,13 @@ function updateRobot(state) {
         ? { base: window.ArmControl.base, shoulder: window.ArmControl.shoulder, elbow: window.ArmControl.elbow, gripper: window.ArmControl.gripper }
         : (window.IKCursor.active ? null : state.arm);
 
-    // IK cursor: snap to gripper tip only when newly activated
-    if (window.IKCursor.active && window.IKCursor.needsSnap) {
+    // IK cursor: track gripper tip when active and not dragging.
+    // This keeps tipToWrist always correct at drag start — no oscillation on release.
+    if (window.IKCursor.active && !window.IKCursor.dragging) {
         const tipWorld = new THREE.Vector3();
         gripTipMarker.getWorldPosition(tipWorld);
         ikCursorMesh.position.copy(tipWorld);
         window.IKCursor.worldPos.copy(tipWorld);
-        window.IKCursor.needsSnap = false;
     }
 
     if (armSource) {
@@ -1010,12 +1011,7 @@ function updateRobot(state) {
         const relPos = ikCursorMesh.position.clone().sub(armBaseWorld);
         updateIKReadout(relPos, distToBase, reachable);
 
-        // Re-solve every frame so the arm converges: tipToWrist offset shifts as the
-        // arm lerps, so running IK once per mouse-move leaves the wrist (not gripper
-        // tip) at the cursor.  Iterating each frame drives it to true convergence.
-        if (!window.IKCursor.dragging) {
-            solveAndApplyIK();
-        }
+        // IK solved only on drag — no per-frame re-solve.
     } else {
         ikCursorMesh.visible = false;
         ikLine.visible = false;
@@ -1411,7 +1407,20 @@ renderer.domElement.addEventListener('pointermove', (e) => {
     }
 });
 
+const _ikArmBase = new THREE.Vector3();
+const IK_MIN_DIST = Math.abs(SIM_LINK1 - SIM_LINK2) + 8; // inner dead-zone + buffer
+
 function solveAndApplyIK() {
+    // Clamp cursor to reachable inner radius so cosBeta denominator can't blow up
+    armBaseGroup.getWorldPosition(_ikArmBase);
+    const toBase = ikCursorMesh.position.clone().sub(_ikArmBase);
+    if (toBase.length() < IK_MIN_DIST) {
+        ikCursorMesh.position.copy(_ikArmBase).addScaledVector(
+            toBase.length() < 0.001 ? new THREE.Vector3(0, 1, 0) : toBase.normalize(),
+            IK_MIN_DIST
+        );
+    }
+
     window.IKCursor.worldPos.copy(ikCursorMesh.position);
     const solution = ikSolveFromWorld(ikCursorMesh.position.clone());
     if (solution) {

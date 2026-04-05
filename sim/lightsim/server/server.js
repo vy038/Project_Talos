@@ -231,18 +231,20 @@ app.post('/api/compile', (req, res) => {
     }
     killSimulator(); // Cleanup sockets
 
-    // Rebuild asynchronously (doesn't block Node event loop)
-    const buildDir = path.join(__dirname, '..', 'build');
+    // Full configure + build (works even on first run with no prior build)
+    const projectDir = path.join(__dirname, '..');
+    const buildDir = path.join(projectDir, 'build');
     const { exec } = require('child_process');
-    
-    exec('cmake --build . -- -j$(nproc)', { cwd: buildDir, timeout: 120000 }, (error, stdout, stderr) => {
+    const buildCmd = `mkdir -p "${buildDir}" && cd "${buildDir}" && cmake .. && cmake --build . -j$(nproc)`;
+
+    exec(buildCmd, { timeout: 120000 }, (error, stdout, stderr) => {
         if (error) {
             console.error(`[API] Build failed: ${error.message}`);
             return res.status(500).json({ status: 'error', message: stderr || error.message });
         }
         console.log('[API] Build succeeded');
         startSimulator();
-        res.json({ status: 'ok', message: 'Recompiled and restarted' });
+        res.json({ status: 'ok', message: 'Compiled and started' });
     });
 });
 

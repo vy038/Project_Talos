@@ -1,14 +1,10 @@
 #!/bin/bash
-# Build and run the lightsim simulator + bridge server
+# Start the lightsim bridge server (compile via the UI button)
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
-# Build first
-"$SCRIPT_DIR/build.sh"
-
-echo ""
 echo "=== Starting Lightsim ==="
 
 if [ -f "$PROJECT_DIR/server/server.js" ]; then

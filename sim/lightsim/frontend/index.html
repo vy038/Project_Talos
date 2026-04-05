@@ -342,8 +342,8 @@
                         document.getElementById('splash-screen').classList.add('hidden');
                         document.getElementById('app').classList.remove('hidden');
                         window.dispatchEvent(new Event('resize'));
-                        // Apply neutral state on boot (same as pressing Reset to Neutral)
-                        document.getElementById('btn-reset').click();
+                        // Reset 3D view to neutral without killing the sim
+                        if (window.resetRobotPosition) window.resetRobotPosition();
                     }, 400);
                 } else {
                     status.textContent = 'Build failed: ' + (data.message || 'Unknown error');
@@ -573,7 +573,6 @@
         document.getElementById('ik-mode-toggle').addEventListener('change', function() {
             if (window.IKCursor) {
                 window.IKCursor.active = this.checked;
-                if (this.checked) window.IKCursor.needsSnap = true;
             }
         });
 
