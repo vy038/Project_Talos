@@ -28,19 +28,20 @@ bool bStateMachineParseUART(const uint8_t *buf, size_t len, detection_result_t *
         }
 
         uint8_t checksum = 0;
-        for (int j = 2; j < 10; j++) {
+        for (int j = 2; j < UART_MSG_LENGTH - 1; j++) {
             checksum ^= msg[j];
         }
 
-        if (checksum != msg[10]) {
+        if (checksum != msg[UART_MSG_LENGTH - 1]) {
             continue;
         }
 
-        result->detected    = (msg[3] != 0);
-        result->ball_x      = (uint16_t)(msg[4] << 8) | msg[5];
-        result->ball_y      = (uint16_t)(msg[6] << 8) | msg[7];
-        result->pixel_radius = (uint16_t)(msg[8] << 8) | msg[9];
-        result->fresh       = true;
+        result->detected     = (msg[3] != 0);
+        result->ball_x       = (uint16_t)(msg[4]  << 8) | msg[5];
+        result->ball_y       = (uint16_t)(msg[6]  << 8) | msg[7];
+        result->pixel_radius = (uint16_t)(msg[8]  << 8) | msg[9];
+        result->tof_dist_mm  = (uint16_t)(msg[10] << 8) | msg[11];
+        result->fresh        = true;
 
         return true;
     }
@@ -51,30 +52,33 @@ bool bStateMachineParseUART(const uint8_t *buf, size_t len, detection_result_t *
 /* ---------- helpers ---------- */
 
 static void build_detect_packet(uint8_t *buf, bool detected,
-                                uint16_t x, uint16_t y, uint16_t r) {
-    buf[0] = 0xAA;
-    buf[1] = 0x55;
-    buf[2] = 0x01;
-    buf[3] = detected ? 1 : 0;
-    buf[4] = (x >> 8) & 0xFF;
-    buf[5] = x & 0xFF;
-    buf[6] = (y >> 8) & 0xFF;
-    buf[7] = y & 0xFF;
-    buf[8] = (r >> 8) & 0xFF;
-    buf[9] = r & 0xFF;
+                                uint16_t x, uint16_t y, uint16_t r,
+                                uint16_t tof) {
+    buf[0]  = 0xAA;
+    buf[1]  = 0x55;
+    buf[2]  = 0x01;
+    buf[3]  = detected ? 1 : 0;
+    buf[4]  = (x   >> 8) & 0xFF;
+    buf[5]  = x   & 0xFF;
+    buf[6]  = (y   >> 8) & 0xFF;
+    buf[7]  = y   & 0xFF;
+    buf[8]  = (r   >> 8) & 0xFF;
+    buf[9]  = r   & 0xFF;
+    buf[10] = (tof >> 8) & 0xFF;
+    buf[11] = tof & 0xFF;
     uint8_t cksum = 0;
-    for (int i = 2; i < 10; i++) cksum ^= buf[i];
-    buf[10] = cksum;
+    for (int i = 2; i < 12; i++) cksum ^= buf[i];
+    buf[12] = cksum;
 }
 
 /* ---------- tests ---------- */
 
 TEST(parse_valid_detection) {
-    uint8_t buf[11];
-    build_detect_packet(buf, true, 160, 120, 45);
+    uint8_t buf[13];
+    build_detect_packet(buf, true, 160, 120, 45, 0);
 
     detection_result_t result = {0};
-    bool ok = bStateMachineParseUART(buf, 11, &result);
+    bool ok = bStateMachineParseUART(buf, 13, &result);
 
     ASSERT_TRUE(ok);
     ASSERT_TRUE(result.detected);
@@ -84,23 +88,23 @@ TEST(parse_valid_detection) {
 }
 
 TEST(parse_no_detection) {
-    uint8_t buf[11];
-    build_detect_packet(buf, false, 0, 0, 0);
+    uint8_t buf[13];
+    build_detect_packet(buf, false, 0, 0, 0, 0);
 
     detection_result_t result = {0};
-    bool ok = bStateMachineParseUART(buf, 11, &result);
+    bool ok = bStateMachineParseUART(buf, 13, &result);
 
     ASSERT_TRUE(ok);
     ASSERT_FALSE(result.detected);
 }
 
 TEST(parse_bad_checksum) {
-    uint8_t buf[11];
-    build_detect_packet(buf, true, 100, 50, 30);
-    buf[10] ^= 0xFF;
+    uint8_t buf[13];
+    build_detect_packet(buf, true, 100, 50, 30, 0);
+    buf[12] ^= 0xFF;
 
     detection_result_t result = {0};
-    bool ok = bStateMachineParseUART(buf, 11, &result);
+    bool ok = bStateMachineParseUART(buf, 13, &result);
 
     ASSERT_FALSE(ok);
 }
@@ -122,12 +126,12 @@ TEST(parse_empty_buffer) {
 }
 
 TEST(parse_packet_with_leading_garbage) {
-    uint8_t buf[16];
+    uint8_t buf[18];
     buf[0] = 0x00; buf[1] = 0xFF; buf[2] = 0x42; buf[3] = 0x13; buf[4] = 0x37;
-    build_detect_packet(&buf[5], true, 200, 100, 55);
+    build_detect_packet(&buf[5], true, 200, 100, 55, 0);
 
     detection_result_t result = {0};
-    bool ok = bStateMachineParseUART(buf, 16, &result);
+    bool ok = bStateMachineParseUART(buf, 18, &result);
 
     ASSERT_TRUE(ok);
     ASSERT_EQ(result.ball_x, 200);
@@ -136,30 +140,31 @@ TEST(parse_packet_with_leading_garbage) {
 }
 
 TEST(parse_wrong_message_type) {
-    uint8_t buf[11];
-    build_detect_packet(buf, true, 160, 120, 45);
+    uint8_t buf[13];
+    build_detect_packet(buf, true, 160, 120, 45, 0);
     buf[2] = 0x99;
     uint8_t cksum = 0;
-    for (int i = 2; i < 10; i++) cksum ^= buf[i];
-    buf[10] = cksum;
+    for (int i = 2; i < 12; i++) cksum ^= buf[i];
+    buf[12] = cksum;
 
     detection_result_t result = {0};
-    bool ok = bStateMachineParseUART(buf, 11, &result);
+    bool ok = bStateMachineParseUART(buf, 13, &result);
 
     ASSERT_FALSE(ok);
 }
 
 TEST(parse_max_values) {
-    uint8_t buf[11];
-    build_detect_packet(buf, true, 319, 239, 65535);
+    uint8_t buf[13];
+    build_detect_packet(buf, true, 319, 239, 65535, 65535);
 
     detection_result_t result = {0};
-    bool ok = bStateMachineParseUART(buf, 11, &result);
+    bool ok = bStateMachineParseUART(buf, 13, &result);
 
     ASSERT_TRUE(ok);
     ASSERT_EQ(result.ball_x, 319);
     ASSERT_EQ(result.ball_y, 239);
     ASSERT_EQ(result.pixel_radius, 65535);
+    ASSERT_EQ(result.tof_dist_mm, 65535);
 }
 
 /* ---------- main ---------- */
