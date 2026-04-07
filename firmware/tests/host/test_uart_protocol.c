@@ -39,7 +39,7 @@ bool bStateMachineParseUART(const uint8_t *buf, size_t len, detection_result_t *
         result->detected    = (msg[3] != 0);
         result->ball_x      = (uint16_t)(msg[4] << 8) | msg[5];
         result->ball_y      = (uint16_t)(msg[6] << 8) | msg[7];
-        result->ball_radius = (uint16_t)(msg[8] << 8) | msg[9];
+        result->pixel_radius = (uint16_t)(msg[8] << 8) | msg[9];
         result->fresh       = true;
 
         return true;
@@ -80,7 +80,7 @@ TEST(parse_valid_detection) {
     ASSERT_TRUE(result.detected);
     ASSERT_EQ(result.ball_x, 160);
     ASSERT_EQ(result.ball_y, 120);
-    ASSERT_EQ(result.ball_radius, 45);
+    ASSERT_EQ(result.pixel_radius, 45);
 }
 
 TEST(parse_no_detection) {
@@ -132,7 +132,7 @@ TEST(parse_packet_with_leading_garbage) {
     ASSERT_TRUE(ok);
     ASSERT_EQ(result.ball_x, 200);
     ASSERT_EQ(result.ball_y, 100);
-    ASSERT_EQ(result.ball_radius, 55);
+    ASSERT_EQ(result.pixel_radius, 55);
 }
 
 TEST(parse_wrong_message_type) {
@@ -159,7 +159,7 @@ TEST(parse_max_values) {
     ASSERT_TRUE(ok);
     ASSERT_EQ(result.ball_x, 319);
     ASSERT_EQ(result.ball_y, 239);
-    ASSERT_EQ(result.ball_radius, 65535);
+    ASSERT_EQ(result.pixel_radius, 65535);
 }
 
 /* ---------- main ---------- */
