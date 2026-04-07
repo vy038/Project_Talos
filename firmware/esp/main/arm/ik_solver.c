@@ -60,6 +60,7 @@ bool bIKIsReachable(const ik_target_t *target) {
 }
 
 esp_err_t xIKSolve(const ik_target_t *target, ik_solution_t *solution) {
+
     if (!target || !solution) {
         return ESP_ERR_INVALID_ARG;
     }
@@ -68,15 +69,23 @@ esp_err_t xIKSolve(const ik_target_t *target, ik_solution_t *solution) {
 
     float base_tilt_rad = DEG_TO_RAD(ARM_BASE_ANGLE);
 
-    // base rotation points the arm plane toward the target in XY
-    solution->base_rotation = RAD_TO_DEG(atan2f(target->y, target->x));
+    // offset by shoulder height before rotating
+    float target_z_offset = target->z - ARM_BASE_HEIGHT;
+
+    // rotate target into the tilted arm frame (Y-axis rotation, tilt is forward in X)
+    float x_plane = target->x * cosf(base_tilt_rad) + target_z_offset * sinf(base_tilt_rad);
+    float y_plane = target->y;
+    float z_plane = -target->x * sinf(base_tilt_rad) + target_z_offset * cosf(base_tilt_rad);
+
+    // base rotation points the arm toward the target in the tilted frame
+    solution->base_rotation = RAD_TO_DEG(atan2f(y_plane, x_plane));
     solution->base_rotation = CLAMP(solution->base_rotation, BASE_ROTATION_MIN, BASE_ROTATION_MAX);
 
-    // offset by shoulder height, then project into the tilted arm plane
-    float target_z_offset = target->z - ARM_BASE_HEIGHT;
-    float r_xy = sqrtf(target->x * target->x + target->y * target->y);
-    float plane_x = r_xy * cosf(base_tilt_rad) + target_z_offset * sinf(base_tilt_rad);
-    float plane_z = -r_xy * sinf(base_tilt_rad) + target_z_offset * cosf(base_tilt_rad);
+    // collapse into 2D problem in the arm plane
+    float r = sqrtf(x_plane * x_plane + y_plane * y_plane);
+
+    float plane_x = r;
+    float plane_z = z_plane;
 
     // the solver places the wrist, not the gripper tip, so subtract link3 first
     // link3 goes forward LINK3_LENGTH and down LINK3_OFFSET in arm plane coords
@@ -85,6 +94,7 @@ esp_err_t xIKSolve(const ik_target_t *target, ik_solution_t *solution) {
 
     // reachability check using effective lengths
     float dist = sqrtf(plane_x * plane_x + plane_z * plane_z);
+
     float max_reach = s_l1_eff + s_l2_eff;
     float min_reach = fabsf(s_l1_eff - s_l2_eff);
 
@@ -97,6 +107,7 @@ esp_err_t xIKSolve(const ik_target_t *target, ik_solution_t *solution) {
     // law of cosines for elbow using effective link lengths
     float cos_elbow = (s_l1_eff * s_l1_eff + s_l2_eff * s_l2_eff - dist * dist) /
                       (2.0f * s_l1_eff * s_l2_eff);
+
     cos_elbow = CLAMP(cos_elbow, -1.0f, 1.0f);
 
     solution->elbow = 180.0f - RAD_TO_DEG(acosf(cos_elbow));
@@ -107,6 +118,7 @@ esp_err_t xIKSolve(const ik_target_t *target, ik_solution_t *solution) {
 
     float cos_shoulder_internal = (s_l1_eff * s_l1_eff + dist * dist - s_l2_eff * s_l2_eff) /
                                   (2.0f * s_l1_eff * dist);
+
     cos_shoulder_internal = CLAMP(cos_shoulder_internal, -1.0f, 1.0f);
 
     solution->shoulder = RAD_TO_DEG(angle_to_target + acosf(cos_shoulder_internal));

@@ -162,6 +162,9 @@ const SIM_LINK3 = 45;           // ARM_LINK3_LENGTH 91mm (wrist-to-tip)
 const SIM_LINK1_OFFSET = 9;     // ARM_LINK1_OFFSET 18mm (right)
 const SIM_LINK2_OFFSET = -11;   // ARM_LINK2_OFFSET 21.39mm (left)
 const SIM_LINK3_OFFSET = -13;   // ARM_LINK3_OFFSET 26.83mm (down, approx -Z in arm frame)
+// Effective link lengths: hypotenuse of length+offset, matching xIKSolverInit() in ik_solver.c
+const SIM_L1_EFF = Math.sqrt(SIM_LINK1 * SIM_LINK1 + SIM_LINK1_OFFSET * SIM_LINK1_OFFSET);
+const SIM_L2_EFF = Math.sqrt(SIM_LINK2 * SIM_LINK2 + SIM_LINK2_OFFSET * SIM_LINK2_OFFSET);
 
 // Arm geometry
 // ARM_BASE_ANGLE=38°, LINK1=98mm, LINK2=140mm, LINK3=91mm
@@ -594,39 +597,25 @@ const workspaceSphere = new THREE.Mesh(
 workspaceSphere.visible = false;
 scene.add(workspaceSphere);
 
-// IK Solver — uses Three.js Matrix4 to properly account for arm mount transform
-// (body position/yaw, arm offset, 38° tilt, +PI base offset, +60° elbow bias)
+// IK Solver — mirrors xIKSolve() in ik_solver.c exactly.
 // cursorWorld = desired GRIPPER TIP position in world space.
-// We use the current tip-to-wrist 3D offset from the scene graph to find where
-// the wrist needs to be, then solve the 2-link IK for that wrist target.
-const _ikTipW = new THREE.Vector3();
-const _ikWristW = new THREE.Vector3();
-
+// Transforms into arm-local frame, backs out link3 analytically to find the
+// wrist target, then solves the 2-link IK using effective link lengths.
 function ikSolveFromWorld(cursorWorld) {
-    // Get current tip-to-wrist offset from scene graph (depends on arm pose)
-    gripTipMarker.getWorldPosition(_ikTipW);
-    wristGroup.getWorldPosition(_ikWristW);
-    const tipToWrist = _ikWristW.clone().sub(_ikTipW);
-
-    // Desired wrist position = desired tip position + offset
-    const wristTarget = cursorWorld.clone().add(tipToWrist);
-
     // Build static arm mount matrix: body transform * arm offset * tilt
     const bodyMatrix = new THREE.Matrix4();
     bodyMatrix.makeRotationY(robotPos.yaw);
     bodyMatrix.setPosition(body.position.x, body.position.y, body.position.z);
 
-    const armOffsetMatrix = new THREE.Matrix4();
     const tiltMatrix = new THREE.Matrix4().makeRotationX(-(38 * Math.PI / 180));  // ARM_BASE_ANGLE
     const transMatrix = new THREE.Matrix4().makeTranslation(0, 4.8, 25);  // matches armBaseGroup position
-    armOffsetMatrix.multiplyMatrices(transMatrix, tiltMatrix);
+    const armOffsetMatrix = new THREE.Matrix4().multiplyMatrices(transMatrix, tiltMatrix);
 
-    const mountMatrix = new THREE.Matrix4();
-    mountMatrix.multiplyMatrices(bodyMatrix, armOffsetMatrix);
+    const mountMatrix = new THREE.Matrix4().multiplyMatrices(bodyMatrix, armOffsetMatrix);
 
-    // Invert to transform world → arm-local (pre-servo) space
+    // Transform gripper tip from world → arm-local (pre-servo) space
     const invMount = mountMatrix.clone().invert();
-    const local = wristTarget.applyMatrix4(invMount);
+    const local = cursorWorld.clone().applyMatrix4(invMount);
 
     // Subtract shoulder pivot offset (shoulderGroup is at y=5 in armBaseGroup)
     local.y -= 5;
@@ -636,23 +625,30 @@ function ikSolveFromWorld(cursorWorld) {
     if (baseDeg < 0) baseDeg += 360;
     baseDeg = Math.max(0, Math.min(180, baseDeg));
 
-    // Radial distance from Y axis and height along Y
-    const r = Math.sqrt(local.x * local.x + local.z * local.z);
-    const h = local.y;
-    const dist = Math.sqrt(r * r + h * h);
+    // Radial distance and height of the GRIPPER TIP
+    const r_tip = Math.sqrt(local.x * local.x + local.z * local.z);
+    const h_tip = local.y;
 
-    if (dist > SIM_LINK1 + SIM_LINK2 || dist < Math.abs(SIM_LINK1 - SIM_LINK2) || dist < 1) {
+    // Back out link3 to find the WRIST position in the 2D arm plane.
+    // Mirrors: plane_x -= ARM_LINK3_LENGTH; plane_z += ARM_LINK3_OFFSET;
+    // SIM_LINK3_OFFSET is negative (downward), so subtracting it raises the wrist above the tip.
+    const r_wrist = r_tip - SIM_LINK3;
+    const h_wrist = h_tip - SIM_LINK3_OFFSET;
+
+    const dist = Math.sqrt(r_wrist * r_wrist + h_wrist * h_wrist);
+
+    if (dist > SIM_L1_EFF + SIM_L2_EFF || dist < Math.abs(SIM_L1_EFF - SIM_L2_EFF) || dist < 1) {
         return null; // unreachable
     }
 
-    // 2-link planar IK in the (radial, height) plane for wrist position
-    const cosGamma = (SIM_LINK1 * SIM_LINK1 + SIM_LINK2 * SIM_LINK2 - dist * dist) / (2 * SIM_LINK1 * SIM_LINK2);
+    // 2-link planar IK using effective lengths (matching law-of-cosines in xIKSolve)
+    const cosGamma = (SIM_L1_EFF * SIM_L1_EFF + SIM_L2_EFF * SIM_L2_EFF - dist * dist) / (2 * SIM_L1_EFF * SIM_L2_EFF);
     const gamma = Math.acos(Math.max(-1, Math.min(1, cosGamma)));
 
-    const cosBeta = (SIM_LINK1 * SIM_LINK1 + dist * dist - SIM_LINK2 * SIM_LINK2) / (2 * SIM_LINK1 * dist);
+    const cosBeta = (SIM_L1_EFF * SIM_L1_EFF + dist * dist - SIM_L2_EFF * SIM_L2_EFF) / (2 * SIM_L1_EFF * dist);
     const beta = Math.acos(Math.max(-1, Math.min(1, cosBeta)));
 
-    const shoulderRad = Math.atan2(r, h) - beta;
+    const shoulderRad = Math.atan2(r_wrist, h_wrist) - beta;
     // Negate: shoulder rotation in scene is -(deg-90)*PI/180, so output must be negated
     const shoulderDeg = -shoulderRad * 180 / Math.PI + 90;
 
