@@ -101,16 +101,18 @@ TaskHandle_t      xUartCamTaskHandle;  // direct notify via cam ping
 
 **Power monitor** `P1 · 20ms` - runs in the background every 20ms at priority 1. It reads the ACS712 current sensor and uses a consecutive-count filter. To prevent false positives, it needs 2-3 high readings in a row before flagging a problem, which filters out normal servo inrush spikes that can read way above normal for a short burst on startup. When it does detect a real issue, it escalates its own priority up to the max so it can immediately post the emergency status to the queue without waiting behind any other task. The state machine picks it up at the top of its next 50ms cycle and transitions to EMERGENCY.
 
-**Vision task (S3-CAM)** - will receive the unique ping, register that as a signal, and then run the task based on it. It will snap a picture quickly, then run the VL53L0X if available to sense accurate depth. It will first detect any red centroid objects in the frame, then try to estimate the difference from the center of the frame to the center of the centroid. Radius will be estimated based on a known value, then distance can be estimated. If the ball is right in front of the robot, VL53 is run so depth can be measured accurately. It will then put that into a packet form (`vUARTProtoBuildDetection`) to be sent to the waiting UART task on the ESP32-WROOM.
+**Vision task (S3-CAM)** - will receive the unique ping, register that as a signal, and then run the task based on it. It will snap a picture quickly, then detect any red centroid objects in the frame and compute the centroid position and apparent pixel radius. The VL53L0X is read every frame to get a raw distance measurement. The pixel radius and TOF distance are sent separately in the packet rather than being fused, because the pixel-based distance estimate is noisy and not reliable enough to use for actual approach control. The WROOM side treats them differently: pixel radius is only used to scale turn speed during alignment, and the raw TOF reading is the only thing that drives approach speed and stop decisions.
 
 ---
 
 ## Logic Flow
 
 ```
-BOOT -> IDLE -> SEARCH -> APPROACH -> GRAB -> DONE
-                                               |
-                                          EMERGENCY (any state, power fault)
+BOOT -> IDLE -> SEARCH -> ALIGN -> APPROACH -> GRAB -> DONE
+                   ^         ^        |
+                   |         +--------+ (TOF spike or drift)
+                   |
+              EMERGENCY (any state, power fault)
 ```
 
 
@@ -125,7 +127,9 @@ Once the frame is processed, it will enter searching mode, where the robot will 
 
 Gait is used heavily for all walking, and it has auto balance too to make sure the robot is always oriented upwards properly.
 
-Once ball is located, it will transition to approaching, so the robot will walk over to it, and adjust if needed by turning. Speed scales down as it gets closer.
+Once ball is located, it will transition to aligning, then approaching. During alignment, the camera is used purely for centering: the pixel radius of the blob sets the turn speed (bigger blob means the ball is close, so it turns slower for precision), but no distance math from the camera is used at all since that estimate fluctuates too much in practice.
+
+Once centered, the robot switches to approach mode and walks toward the ball. Speed is controlled by the VL53L0X TOF reading, which is the only accurate distance source. If TOF isn't hitting the ball yet, it creeps forward slowly until it does. If the TOF reading suddenly spikes (meaning the ball has left the sensor beam), it transitions back to align to use the camera for micro adjustments to re-center and re-acquire. Camera is also still watching to catch large centering drift and kick back to align if needed.
 
 Once it's close enough, then the coordinate information of the ball is sent to the arm where it takes over and grabs it. Camera is also watching to make sure ball doesn't shift.
 

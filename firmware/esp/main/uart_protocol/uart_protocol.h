@@ -11,25 +11,27 @@
  *   [0xAA] [0x55] [type] [payload...] [checksum]
  *   checksum = XOR of bytes[2 .. len-2]
  *
- * Type 0x01 — ball detection (11 bytes total):
- *   [0xAA][0x55][0x01][det][x_hi][x_lo][y_hi][y_lo][r_hi][r_lo][chk]
- *   det  : 1=detected, 0=not detected
- *   x    : centroid x (0=left, 319=right)
- *   y    : centroid y (0=top,  239=bottom)
- *   r    : fused distance mm if detected, else 0
+ * Type 0x01 — ball detection (13 bytes total):
+ *   [0xAA][0x55][0x01][det][x_hi][x_lo][y_hi][y_lo][px_r_hi][px_r_lo][tof_hi][tof_lo][chk]
+ *   det   : 1=detected, 0=not detected
+ *   x     : centroid x (0=left, 319=right)
+ *   y     : centroid y (0=top,  239=bottom)
+ *   px_r  : apparent pixel radius (sqrt(blob_pixels/pi)), 0 if not detected
+ *   tof   : VL53L0X distance in mm, 0 if sensor unavailable or no reading
  */
 
 #define TALOS_PKT_START0        0xAAu
 #define TALOS_PKT_START1        0x55u
 #define TALOS_PKT_TYPE_DETECT   0x01u
-#define TALOS_PKT_LEN           11u
-#define TALOS_PKT_PAYLOAD_LEN   7u
+#define TALOS_PKT_LEN           13u
+#define TALOS_PKT_PAYLOAD_LEN   9u
 
 typedef struct {
     bool     detected;
-    uint16_t x;     /* centroid x */
-    uint16_t y;     /* centroid y */
-    uint16_t r;     /* dist_mm when detected, else 0 */
+    uint16_t x;       /* centroid x */
+    uint16_t y;       /* centroid y */
+    uint16_t px_r;    /* apparent pixel radius, 0 if not detected */
+    uint16_t tof_mm;  /* VL53L0X distance in mm, 0 if unavailable */
 } talos_detection_t;
 
 /* Zero-init before first use */
@@ -39,7 +41,7 @@ typedef struct {
 } talos_framer_t;
 
 /**
- * @brief Build an 11-byte detection packet into buf.
+ * @brief Build a 13-byte detection packet into buf.
  * @param buf  Output buffer, must be >= TALOS_PKT_LEN bytes.
  * @param det  Detection to encode.
  */

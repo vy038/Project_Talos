@@ -425,32 +425,16 @@ function simulateCameraDetection(ballPos) {
     const distSim = ballRel.length();
     const distMm = distSim * SIM_MM_PER_PX;
 
-    // VL53L0X ToF — ray-sphere intersection in camera-local space.
-    // tofGroup sits at (0, -10, 10) within camGroup local, beam fires along local +Z.
-    // ballLocal is already in camera-local space, so no quaternion needed.
-    const TOF_LOCAL_ORIGIN = new THREE.Vector3(0, -10, 10); // tofGroup.position
-    const oc = TOF_LOCAL_ORIGIN.clone().sub(ballLocal);
-    // dir is (0,0,1) so dot product simplifies: b = 2*oc.z, dir·dir = 1
-    const b = 2 * oc.z;
-    const c = oc.dot(oc) - ballRadius * ballRadius;
-    const disc = b * b - 4 * c;
-
-    const TOF_MAX_SIM = 2000 / SIM_MM_PER_PX;
-    let tofDistSim;
-    if (disc < 0) {
-        tofDistSim = TOF_MAX_SIM; // beam misses ball
-    } else {
-        const t1 = (-b - Math.sqrt(disc)) / 2;
-        const t2 = (-b + Math.sqrt(disc)) / 2;
-        const t = (t1 > 0) ? t1 : (t2 > 0 ? t2 : -1);
-        tofDistSim = (t > 0 && t < TOF_MAX_SIM) ? t : TOF_MAX_SIM;
-    }
-
-    const tofWorldPos = new THREE.Vector3();
-    tofGroup.getWorldPosition(tofWorldPos);
-    const tofDistMm = Math.round(Math.min(2000, Math.max(20, tofDistSim * SIM_MM_PER_PX)));
+    // VL53L0X ToF — simplified: beam hits when ball is within the center column of
+    // the frame (horizontal offset < TOF_HIT_PX). This avoids ray/sphere geometry
+    // issues from 3D positioning offsets. When the ball drifts off-axis the TOF reads
+    // 2000mm, triggering the spike-detection realign in state_machine.c.
+    const TOF_HIT_PX = 30;
+    const tofHit = Math.abs(cx - CAM_W / 2) < TOF_HIT_PX;
+    const tofDistMm = tofHit ? Math.round(Math.min(2000, Math.max(20, distMm))) : 2000;
 
     // Update beam length (sim units)
+    const tofDistSim = tofDistMm / SIM_MM_PER_PX;
     lastTofSimDist = tofDistSim;
     const beamPos = tofBeamGeom.attributes.position;
     beamPos.setXYZ(1, 0, 0, tofDistSim);
@@ -470,22 +454,24 @@ function simulateCameraDetection(ballPos) {
     // Bearing angle (degrees)
     const brgDeg = angleH * 180 / Math.PI;
 
-    // Build UART packet (11 bytes) — r field = fused dist mm (see uart_protocol.h)
+    // Build UART packet (13 bytes) — px_r = pixel radius, tof = VL53L0X mm (see uart_protocol.h)
     const det = 1;
-    const pktX = Math.max(0, Math.min(65535, Math.round(cx)));
-    const pktY = Math.max(0, Math.min(65535, Math.round(cy)));
-    const pktR = Math.max(0, Math.min(65535, tofDistMm));
+    const pktX    = Math.max(0, Math.min(65535, Math.round(cx)));
+    const pktY    = Math.max(0, Math.min(65535, Math.round(cy)));
+    const pktPxR  = Math.max(0, Math.min(65535, Math.round(pixelRad)));
+    const pktTof  = Math.max(0, Math.min(65535, tofDistMm));
 
     const pktBytes = [
         0xAA, 0x55, 0x01, det,
-        (pktX >> 8) & 0xFF, pktX & 0xFF,
-        (pktY >> 8) & 0xFF, pktY & 0xFF,
-        (pktR >> 8) & 0xFF, pktR & 0xFF,
+        (pktX   >> 8) & 0xFF, pktX   & 0xFF,
+        (pktY   >> 8) & 0xFF, pktY   & 0xFF,
+        (pktPxR >> 8) & 0xFF, pktPxR & 0xFF,
+        (pktTof >> 8) & 0xFF, pktTof & 0xFF,
         0
     ];
     let chk = 0;
-    for (let i = 2; i < 10; i++) chk ^= pktBytes[i];
-    pktBytes[10] = chk;
+    for (let i = 2; i < 12; i++) chk ^= pktBytes[i];
+    pktBytes[12] = chk;
 
     const pktHex = pktBytes.map(b => b.toString(16).toUpperCase().padStart(2, '0')).join('');
 
@@ -505,7 +491,7 @@ function simulateCameraDetection(ballPos) {
         dist_tof_mm: tofDistMm,
         tof: tofDistMm,
         pkt: pktHex,
-        pkt_decoded: { x: pktX, y: pktY, r: pktR,
+        pkt_decoded: { x: pktX, y: pktY, px_r: pktPxR, tof_mm: pktTof,
             checksum: '0x' + chk.toString(16).toUpperCase().padStart(2, '0') },
     };
 }
@@ -513,10 +499,10 @@ function simulateCameraDetection(ballPos) {
 // Send "not detected" frame
 function sendNoDetection() {
     camDetectionFrame++;
-    const pktBytes = [0xAA, 0x55, 0x01, 0, 0, 0, 0, 0, 0, 0, 0];
+    const pktBytes = [0xAA, 0x55, 0x01, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
     let chk = 0;
-    for (let i = 2; i < 10; i++) chk ^= pktBytes[i];
-    pktBytes[10] = chk;
+    for (let i = 2; i < 12; i++) chk ^= pktBytes[i];
+    pktBytes[12] = chk;
     const pktHex = pktBytes.map(b => b.toString(16).toUpperCase().padStart(2, '0')).join('');
 
     return {
@@ -527,7 +513,7 @@ function sendNoDetection() {
         ox: 0, oy: 0, brg_deg: 0,
         dist_mm: 0, tof: 0,
         pkt: pktHex,
-        pkt_decoded: { x: 0, y: 0, r: 0, checksum: '0x' + chk.toString(16).toUpperCase().padStart(2, '0') },
+        pkt_decoded: { x: 0, y: 0, px_r: 0, tof_mm: 0, checksum: '0x' + chk.toString(16).toUpperCase().padStart(2, '0') },
     };
 }
 

@@ -28,11 +28,12 @@ void vUartCamTask(void *pvParams) {
         size_t consumed;
         if (bUARTProtoFeedBuf(&framer, rx, bytes_read, &consumed, &td)) {
             detection_result_t result = {
-                .detected    = td.detected,
-                .ball_x      = td.x,
-                .ball_y      = td.y,
-                .ball_radius = td.r,
-                .fresh       = true,
+                .detected     = td.detected,
+                .ball_x       = td.x,
+                .ball_y       = td.y,
+                .pixel_radius = td.px_r,
+                .tof_dist_mm  = td.tof_mm,
+                .fresh        = true,
             };
             xQueueOverwrite(xFrameQueue, &result);
         }

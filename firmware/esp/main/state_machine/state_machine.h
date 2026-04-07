@@ -38,12 +38,22 @@
 // if ball center is within this many px of frame center, consider it "centered"
 #define BALL_CENTER_TOLERANCE_X     25
 
-// tof threshhold of VL53L0X (mm) when robot is close enough to attempt grab (r field of UART packet)
+// VL53L0X distance (mm) at which robot is close enough to attempt grab
 // TODO: calibrate by positioning ball at grab distance and reading ToF
 #define BALL_STOP_TOF_MM            200
 
-// reference max distance for accurate distance scaling at a speed (mm)
+// reference max TOF distance for approach speed scaling (mm)
 #define BALL_APPROACH_FAR_MM        800
+
+// pixel radius at which turn speed reaches its minimum (ball nearly fills frame)
+// pixel_radius = sqrt(blob_pixels/pi), so ~80px ≈ ~20000 px blob, ball close enough for slow turns
+#define MAX_TURN_PIXEL_RADIUS       80
+
+// if TOF distance jumps by more than this factor in one frame, treat as ball leaving beam
+#define TOF_SPIKE_RATIO             1.8f
+
+// walk speed when TOF has no reading (no beam hit yet) — approach cautiously
+#define APPROACH_BLIND_SPEED        0.15f
 
 // approximate camera horizontal FOV (degrees), used to convert ball_x pixel offset to arm base rotation angle during grab prep
 // OV2640 QVGA ≈ 62 degrees
@@ -54,25 +64,26 @@
 // TODO: calibrate empirically
 #define BASE_ANGLE_SCALE            1.1f
 
-// pixel offset threshold for when to swap from course adjustment (tripod) to fine adjustment (wave) in align
+// pixel offset threshold for when to swap from coarse adjustment (tripod) to fine adjustment (wave) in align
 // avoids gait switch mid-stride when transitioning directly from search
 #define ALIGN_COARSE_THRESHOLD_X    80
 
 #define SEARCH_TIMEOUT_MS           10000   // how long to search before resetting timer
 #define GRAB_PREP_PAUSE_MS          1500    // let robot stabilize before grabbing
 
-// UART protocol constants
+// UART protocol constants (must match uart_protocol.h)
 #define UART_MSG_START_0        0xAA
 #define UART_MSG_START_1        0x55
 #define UART_MSG_TYPE_DETECT    0x01
-#define UART_MSG_LENGTH         11
+#define UART_MSG_LENGTH         13
 
 typedef struct {
-    bool detected;
+    bool     detected;
     uint16_t ball_x;        // 0=left, 319=right
     uint16_t ball_y;        // 0=top, 239=bottom
-    uint16_t ball_radius;   // apparent size in px
-    bool fresh;             // updated since last read?
+    uint16_t pixel_radius;  // apparent pixel radius sqrt(blob_px/pi), for turn speed scaling
+    uint16_t tof_dist_mm;   // VL53L0X reading in mm, 0 if unavailable
+    bool     fresh;         // updated since last read?
 } detection_result_t;
 
 typedef enum {

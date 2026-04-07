@@ -34,11 +34,14 @@ void vVisionTask(void *pvParams) {
         }
 
         // pack result and send back to WROOM
+        // px_r: apparent pixel radius — used by WROOM for turn speed scaling only
+        // tof_mm: raw VL53L0X reading — used by WROOM as authoritative distance for approach
         talos_detection_t td = {
             .detected = det.detected,
             .x        = (uint16_t)det.centroid_x,
             .y        = (uint16_t)det.centroid_y,
-            .r        = det.detected ? (uint16_t)det.dist_mm : 0,
+            .px_r     = det.detected ? (uint16_t)det.pixel_radius : 0,
+            .tof_mm   = (uint16_t)det.dist_tof_mm,
         };
 
         uint8_t pkt[TALOS_PKT_LEN];

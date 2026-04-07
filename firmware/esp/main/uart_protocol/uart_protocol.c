@@ -15,13 +15,15 @@ void vUARTProtoBuildDetection(uint8_t *buf, const talos_detection_t *det)
     buf[1]  = TALOS_PKT_START1;
     buf[2]  = TALOS_PKT_TYPE_DETECT;
     buf[3]  = det->detected ? 1u : 0u;
-    buf[4]  = (uint8_t)((det->x >> 8) & 0xFF);
-    buf[5]  = (uint8_t)( det->x       & 0xFF);
-    buf[6]  = (uint8_t)((det->y >> 8) & 0xFF);
-    buf[7]  = (uint8_t)( det->y       & 0xFF);
-    buf[8]  = (uint8_t)((det->r >> 8) & 0xFF);
-    buf[9]  = (uint8_t)( det->r       & 0xFF);
-    buf[10] = compute_checksum(buf);
+    buf[4]  = (uint8_t)((det->x      >> 8) & 0xFF);
+    buf[5]  = (uint8_t)( det->x             & 0xFF);
+    buf[6]  = (uint8_t)((det->y      >> 8) & 0xFF);
+    buf[7]  = (uint8_t)( det->y             & 0xFF);
+    buf[8]  = (uint8_t)((det->px_r   >> 8) & 0xFF);
+    buf[9]  = (uint8_t)( det->px_r          & 0xFF);
+    buf[10] = (uint8_t)((det->tof_mm >> 8) & 0xFF);
+    buf[11] = (uint8_t)( det->tof_mm        & 0xFF);
+    buf[12] = compute_checksum(buf);
 }
 
 bool bUARTProtoFeedByte(talos_framer_t *framer, uint8_t byte, talos_detection_t *out)
@@ -57,9 +59,10 @@ bool bUARTProtoFeedByte(talos_framer_t *framer, uint8_t byte, talos_detection_t 
     if (framer->buf[2] != TALOS_PKT_TYPE_DETECT)                          return false;
 
     out->detected = (framer->buf[3] != 0);
-    out->x = ((uint16_t)framer->buf[4] << 8) | framer->buf[5];
-    out->y = ((uint16_t)framer->buf[6] << 8) | framer->buf[7];
-    out->r = ((uint16_t)framer->buf[8] << 8) | framer->buf[9];
+    out->x      = ((uint16_t)framer->buf[4]  << 8) | framer->buf[5];
+    out->y      = ((uint16_t)framer->buf[6]  << 8) | framer->buf[7];
+    out->px_r   = ((uint16_t)framer->buf[8]  << 8) | framer->buf[9];
+    out->tof_mm = ((uint16_t)framer->buf[10] << 8) | framer->buf[11];
     return true;
 }
 

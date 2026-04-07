@@ -17,6 +17,7 @@ static int64_t state_enter_time = 0;
 static detection_result_t last_detection = {0};
 static bool grab_prep_arm_sent = false;
 static gait_type_t active_gait = GAIT_TRIPOD; // initial gait
+static uint16_t s_prev_tof_mm = 0;            // last valid TOF reading during approach, for spike detection
 
 // helper function to switch gait if not already set, avoids mid-stride gait switches which cause leg snapping
 static void set_gait_if_needed(gait_type_t type) {
@@ -38,6 +39,7 @@ static void transition(robot_state_t new_state) {
     if (new_state != STATE_GRAB_PREP) {
         grab_prep_arm_sent = false;
     }
+    s_prev_tof_mm = 0;
     current_state = new_state;
     state_enter_time = esp_timer_get_time();
 }
@@ -93,8 +95,8 @@ static void handle_search(void) {
     // stops when ball is found
     if (last_detection.fresh && last_detection.detected) {
         last_detection.fresh = false;
-        ESP_LOGI(TAG, "Ball detected at x=%d, r=%d",
-                 last_detection.ball_x, last_detection.ball_radius);
+        ESP_LOGI(TAG, "Ball detected at x=%d, px_r=%d",
+                 last_detection.ball_x, last_detection.pixel_radius);
 
         int center_offset = (int)last_detection.ball_x - (CAM_FRAME_WIDTH / 2);
 
@@ -114,7 +116,7 @@ static void handle_search(void) {
 }
 
 static void handle_align(void) {
-    // use tripod for coarse correction (avoids mid-stride gait switch from searching, causing janky leg movement),
+    // use tripod for coarse correction (avoids mid-stride gait switch from searching, causing janky leg movement)
     int coarse_offset = (int)last_detection.ball_x - (CAM_FRAME_WIDTH / 2);
     if (abs(coarse_offset) > ALIGN_COARSE_THRESHOLD_X) {
         set_gait_if_needed(GAIT_TRIPOD);
@@ -122,7 +124,6 @@ static void handle_align(void) {
         set_gait_if_needed(GAIT_WAVE);
     }
 
-    // if ball is not updated since last read, look for ball TODO change method?
     if (!last_detection.fresh) {
         if (ms_in_state() > 2000) {
             ESP_LOGW(TAG, "Lost ball during alignment");
@@ -133,13 +134,11 @@ static void handle_align(void) {
 
     last_detection.fresh = false;
 
-    // if ball lost, go back to search
     if (!last_detection.detected) {
         transition(STATE_SEARCH);
         return;
     }
 
-    // calculate direction of ball rel to center
     int center_offset = (int)last_detection.ball_x - (CAM_FRAME_WIDTH / 2);
 
     if (abs(center_offset) < BALL_CENTER_TOLERANCE_X) {
@@ -148,14 +147,13 @@ static void handle_align(void) {
         return;
     }
 
-    // scale turn speed down as ball gets closer (smaller dist_mm = closer)
-    float proximity = 1.0f - (float)last_detection.ball_radius / (float)BALL_APPROACH_FAR_MM;
-    if (proximity < 0.0f) proximity = 0.0f;
-    if (proximity > 1.0f) proximity = 1.0f;
-    float turn_speed = 0.2f - (0.12f * proximity);  // 0.2 when far, 0.08 when close
+    // scale turn speed from pixel radius: bigger radius = ball is close = turn slower for precision
+    // camera distance estimate is noisy; pixel radius is stable enough for speed modulation only
+    float px_ratio = (float)last_detection.pixel_radius / (float)MAX_TURN_PIXEL_RADIUS;
+    if (px_ratio > 1.0f) px_ratio = 1.0f;
+    float turn_speed = 0.2f - (0.12f * px_ratio);  // 0.2 when far/small, 0.08 when close/large
     if (turn_speed < 0.08f) turn_speed = 0.08f;
 
-    // direction to move in
     if (center_offset > 0) {
         vGaitSetCommand(MOVE_TURN_RIGHT, turn_speed);
     } else {
@@ -165,12 +163,13 @@ static void handle_align(void) {
 
 static void handle_approach(void) {
     set_gait_if_needed(GAIT_TRIPOD);
-    // use moderate speed. ToF only fires when beam intersects ball
-    float walk_speed = 0.3f;
-    if (last_detection.ball_radius > 0 && last_detection.ball_radius < BALL_APPROACH_FAR_MM) {
-        // ToF beam is actively hitting the ball, scale down speed as it gets closer
-        float proximity = 1.0f - (float)last_detection.ball_radius / (float)BALL_APPROACH_FAR_MM;
-        walk_speed = 0.3f - (0.15f * proximity);
+
+    // speed control: use VL53L0X as authoritative distance.
+    // if TOF has no reading yet (ball not in beam), creep forward slowly.
+    float walk_speed = APPROACH_BLIND_SPEED;
+    if (last_detection.tof_dist_mm > 0 && last_detection.tof_dist_mm < BALL_APPROACH_FAR_MM) {
+        float proximity = 1.0f - (float)last_detection.tof_dist_mm / (float)BALL_APPROACH_FAR_MM;
+        walk_speed = 0.3f - (0.15f * proximity);  // 0.3 far, 0.15 close
         if (walk_speed < 0.1f) walk_speed = 0.1f;
     }
 
@@ -187,23 +186,35 @@ static void handle_approach(void) {
 
     last_detection.fresh = false;
 
-    // if not in camera frame anymore, look for it
     if (!last_detection.detected) {
         vGaitSetCommand(MOVE_STOP, 0);
         transition(STATE_SEARCH);
         return;
     }
 
-    // if not in center, prepare to turn
+    // camera centering check: if ball drifts significantly off-center, realign
     int center_offset = (int)last_detection.ball_x - (CAM_FRAME_WIDTH / 2);
     if (abs(center_offset) > BALL_CENTER_TOLERANCE_X * 2) {
         transition(STATE_ALIGN);
         return;
     }
 
-    // if close enough (tof dist_mm small enough), transition to grab state
-    if (last_detection.ball_radius > 0 && last_detection.ball_radius <= BALL_STOP_TOF_MM) {
-        ESP_LOGI(TAG, "Ball within reach (tof=%d mm)", last_detection.ball_radius);
+    uint16_t tof = last_detection.tof_dist_mm;
+
+    // TOF spike: ball left the beam (robot turned or ball moved). use camera to micro-adjust.
+    if (tof > 0 && s_prev_tof_mm > 0 && (float)tof > (float)s_prev_tof_mm * TOF_SPIKE_RATIO) {
+        ESP_LOGW(TAG, "TOF spike %d->%d mm, realigning", s_prev_tof_mm, tof);
+        transition(STATE_ALIGN);
+        return;
+    }
+
+    if (tof > 0) {
+        s_prev_tof_mm = tof;
+    }
+
+    // stop and grab when VL53L0X confirms close enough
+    if (tof > 0 && tof <= BALL_STOP_TOF_MM) {
+        ESP_LOGI(TAG, "Ball within reach (tof=%d mm)", tof);
         vGaitSetCommand(MOVE_STOP, 0);
         transition(STATE_GRAB_PREP);
     }
@@ -378,22 +389,23 @@ bool bStateMachineParseUART(const uint8_t *buf, size_t len, detection_result_t *
         }
 
         uint8_t checksum = 0;
-        for (int j = 2; j < 10; j++) {
+        for (int j = 2; j < UART_MSG_LENGTH - 1; j++) {
             checksum ^= msg[j];
         }
 
-        if (checksum != msg[10]) {
+        if (checksum != msg[UART_MSG_LENGTH - 1]) {
             ESP_LOGW(TAG, "UART checksum mismatch: got 0x%02X, expected 0x%02X",
-                     msg[10], checksum);
+                     msg[UART_MSG_LENGTH - 1], checksum);
             continue;
         }
 
         // parsing message into detection result struct
-        result->detected    = (msg[3] != 0);
-        result->ball_x      = (uint16_t)(msg[4] << 8) | msg[5];
-        result->ball_y      = (uint16_t)(msg[6] << 8) | msg[7];
-        result->ball_radius = (uint16_t)(msg[8] << 8) | msg[9];
-        result->fresh       = true;
+        result->detected     = (msg[3] != 0);
+        result->ball_x       = (uint16_t)(msg[4]  << 8) | msg[5];
+        result->ball_y       = (uint16_t)(msg[6]  << 8) | msg[7];
+        result->pixel_radius = (uint16_t)(msg[8]  << 8) | msg[9];
+        result->tof_dist_mm  = (uint16_t)(msg[10] << 8) | msg[11];
+        result->fresh        = true;
 
         return true;
     }

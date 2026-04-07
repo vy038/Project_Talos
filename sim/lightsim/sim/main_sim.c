@@ -11,7 +11,7 @@
  *
  * Injection server: TCP port 9998 (loopback only)
  *   Accepts one client at a time. Protocol is identical to the old stdin:
- *     - 0xAA ... (11 bytes): binary UART detection packet → sim_uart_inject
+ *     - 0xAA ... (13 bytes): binary UART detection packet → sim_uart_inject
  *     - { ... }\n          : JSON tof update → sim_set_tof_distance_mm
  */
 
@@ -44,10 +44,10 @@ static void process_injection_buf(uint8_t *buf, size_t *buf_len) {
     size_t i = 0;
     while (i < *buf_len) {
         if (buf[i] == 0xAA) {
-            /* Binary UART packet — needs 11 bytes */
-            if (*buf_len - i < 11) break;
-            sim_uart_inject(buf + i, 11);
-            i += 11;
+            /* Binary UART packet — needs 13 bytes */
+            if (*buf_len - i < 13) break;
+            sim_uart_inject(buf + i, 13);
+            i += 13;
         } else if (buf[i] == '{') {
             /* JSON line — find newline */
             size_t j = i;
