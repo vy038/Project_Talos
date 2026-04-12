@@ -173,6 +173,12 @@ esp_err_t xGaitInit(void) {
     master_phase = 0.0f;
     active_offsets = tripod_offsets;
 
+    esp_err_t ret = xPCA9685Init(I2C_MASTER_NUM, PCA9685_BODY_ADDR, SERVO_PWM_FREQ_HZ);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "PCA9685 body init failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
     // set angles to neutral BEFORE first write to avoid servo jump from 0°
     for (int i = 0; i < NUM_LEGS; i++) {
         current_angles.hip_angle[i]  = hip_neutral_deg[i];

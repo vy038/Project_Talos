@@ -35,7 +35,13 @@ esp_err_t xArmControlInit(void) {
     // initialize arm by setting all servos to 90 degrees (neutral position)
     current_state = ARM_IDLE;
 
-    esp_err_t ret = xArmSetAngleWithRetry(ARM_BASE_CH, 90);
+    esp_err_t ret = xPCA9685Init(I2C_MASTER_NUM, PCA9685_ARM_ADDR, SERVO_PWM_FREQ_HZ);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "PCA9685 arm init failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    ret = xArmSetAngleWithRetry(ARM_BASE_CH, 90);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize base servo");
         return ret;
