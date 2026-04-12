@@ -8,8 +8,8 @@
 // UART configuration for inter-ESP32 communication
 #define UART_INTER_ESP_NUM      UART_NUM_2
 #define UART_INTER_ESP_BAUD     115200
-#define UART_PIN_TX             GPIO_NUM_17
-#define UART_PIN_RX             GPIO_NUM_16
+#define UART_PIN_TX             GPIO_NUM_38
+#define UART_PIN_RX             GPIO_NUM_39
 
 /**
  * @brief Initialize UART
