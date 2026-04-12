@@ -73,8 +73,4 @@ void app_main(void) {
         xTaskCreatePinnedToCore(vBalanceTask,  "balance",    3072, NULL, 5, NULL,                   1);
     }
     xTaskCreatePinnedToCore(vStateMachineTask, "state_mach", 4096, NULL, 4, NULL,                   1);
-
-    while (1) {
-        vTaskDelay(pdMS_TO_TICKS(1000));
-    }
 }
