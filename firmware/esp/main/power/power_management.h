@@ -43,6 +43,14 @@ typedef struct {
 typedef void (*power_event_cb_t)(power_status_t status, float current_amps);
 
 /**
+ * @brief Enable or disable power monitoring at runtime.
+ *
+ * Disabled by default. Enable only when ACS712 is physically connected
+ * a floating ADC pin produces garbage readings that trigger false emergencies.
+ */
+void vPowerSetEnabled(bool enabled);
+
+/**
  * @brief Init power monitoring. Call after ACS712 init.
  * 
  * Initializes internal state and takes a baseline current reading. Must be called

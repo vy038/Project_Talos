@@ -9,6 +9,13 @@ static power_event_cb_t event_callback = NULL;
 static uint8_t consecutive_warning = 0;
 static uint8_t consecutive_emergency = 0;
 static bool initialized = false;
+static bool monitoring_enabled = false;
+
+// enables power monitor or disables
+void vPowerSetEnabled(bool enabled) {
+    monitoring_enabled = enabled;
+    ESP_LOGI(TAG, "Power monitoring %s", enabled ? "enabled" : "disabled");
+}
 
 esp_err_t xPowerInit(void) {
     // configs for power stats TODO: change values
@@ -34,7 +41,8 @@ void vPowerSetCallback(power_event_cb_t callback) {
 }
 
 power_status_t xPowerCheck(void) {
-    if (!initialized) return POWER_WARNING;
+    // verify if initialized and enabled
+    if (!initialized || !monitoring_enabled) return POWER_OK;
 
     // read current from sensor
     float amps = 0;
