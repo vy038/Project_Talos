@@ -131,7 +131,7 @@ Once ball is located, it will transition to aligning, then approaching. During a
 
 Once centered, the robot switches to approach mode and walks toward the ball. Speed is controlled by the VL53L0X TOF reading, which is the only accurate distance source. If TOF isn't hitting the ball yet, it creeps forward slowly until it does. If the TOF reading suddenly spikes (meaning the ball has left the sensor beam), it transitions back to align to use the camera for micro adjustments to re-center and re-acquire. Camera is also still watching to catch large centering drift and kick back to align if needed.
 
-Once it's close enough, then the coordinate information of the ball is sent to the arm where it takes over and grabs it. Camera is also watching to make sure ball doesn't shift.
+Once it's close enough, the robot stops and transitions to grab phase where the arm takes over.
 
 Arm grabs, lifts, and holds. Program is done, robot stays in DONE state.
 

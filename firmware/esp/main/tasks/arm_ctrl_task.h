@@ -7,9 +7,7 @@
  * suspended so there is no I2C contention.
  *
  * Once unblocked, calls xArmUpdate() every 20ms to incrementally move the
- * arm toward the target angles set by the state machine. The state machine
- * continues to receive camera updates during this phase and adjusts the
- * target coordinates in real time via xArmSetAngles().
+ * arm toward the target angles set by the state machine.
  *
  * Holds xI2CMutex during each servo write to share the I2C bus safely.
  */
