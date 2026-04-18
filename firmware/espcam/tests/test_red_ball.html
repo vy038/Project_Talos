@@ -1,3 +1,15 @@
+<!--
+Red Ball Detection Test Viewer
+
+View live camera feed and ball detection metrics from ESP-CAM.
+
+Setup:
+  1. python3 test_red_ball_serial.py --port /dev/ttyACM0 --baud 115200
+  2. Open this page in browser (auto-opens at http://localhost:9000/test_red_ball.html)
+  3. Point camera at red ball
+
+Shows: centroid, blob size, distance estimate, UART packet bytes
+-->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -148,7 +160,7 @@
 </div>
 
 <script>
-const isSerialBridge = window.location.port === '8000';
+const isSerialBridge = window.location.port === '9000';
 const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 const WS_URL = isSerialBridge ? "ws://localhost:8765" : `${protocol}//${window.location.host}/camera`;
 const CAM_W = 320, CAM_H = 240;

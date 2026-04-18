@@ -2,14 +2,39 @@
 """
 test_red_ball_serial.py
 
-Reads [RED_BALL] log lines from ESP-CAM serial port,
-broadcasts parsed data as JSON over WebSocket for test_red_ball.html.
+ESP-CAM Red Ball Detection Test Bridge
 
-Usage:
-    python3 test_red_ball_serial.py --port /dev/ttyUSB0 --baud 115200
+Reads [RED_BALL] log lines from ESP-CAM serial port and streams them
+as JSON over WebSocket to test_red_ball.html for live visualization.
 
-Install deps:
-    pip install pyserial websockets
+=== QUICK START ===
+
+1. Install dependencies:
+   pip install pyserial websockets
+
+2. Flash the firmware:
+   source ~/esp/esp-idf/export.sh
+   idf.py -p /dev/ttyACM0 flash
+
+3. Run this bridge:
+   python3 test_red_ball_serial.py --port /dev/ttyACM0 --baud 115200
+
+4. Open in browser:
+   http://localhost:9000/test_red_ball.html
+
+=== USAGE ===
+
+Basic:
+    python3 test_red_ball_serial.py --port /dev/ttyACM0 --baud 115200
+
+With custom ports:
+    python3 test_red_ball_serial.py --port /dev/ttyUSB0 --http-port 8080 --ws-port 8765
+
+Options:
+    --port      Serial port device (default: /dev/ttyACM0)
+    --baud      Serial baud rate (default: 115200)
+    --http-port HTTP server port for test_red_ball.html (default: 9000)
+    --ws-port   WebSocket server port (default: 8765)
 """
 
 import argparse
@@ -134,10 +159,10 @@ async def main(port: str, baud: int, ws_port: int, http_port: int):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="ESP-CAM red ball serial -> WebSocket bridge")
-    parser.add_argument("--port",    default="/dev/ttyUSB0", help="Serial port")
-    parser.add_argument("--baud",    default=115200, type=int, help="Baud rate")
-    parser.add_argument("--ws-port",   default=8765, type=int, help="WebSocket port")
-    parser.add_argument("--http-port", default=8000, type=int, help="HTTP server port")
+    parser.add_argument("--port",    default="/dev/ttyACM0", help="Serial port (default: /dev/ttyACM0)")
+    parser.add_argument("--baud",    default=115200, type=int, help="Baud rate (default: 115200)")
+    parser.add_argument("--ws-port",   default=8765, type=int, help="WebSocket port (default: 8765)")
+    parser.add_argument("--http-port", default=9000, type=int, help="HTTP server port (default: 9000)")
     args = parser.parse_args()
 
     asyncio.run(main(args.port, args.baud, args.ws_port, args.http_port))

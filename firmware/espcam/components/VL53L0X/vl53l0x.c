@@ -623,22 +623,27 @@ vl53l0x_t *
 vl53l0x_config (int8_t port, int8_t scl, int8_t sda, int8_t xshut, uint8_t address, uint8_t io_2v8)
 {
    if (port < 0 || scl < 0 || sda < 0 || scl == sda)
-      return NULL;
+   {  ESP_LOGE(TAG, "vl53l0x_config: bad args port=%d scl=%d sda=%d", port, scl, sda); return NULL; }
    if (!GPIO_IS_VALID_OUTPUT_GPIO (scl) || !GPIO_IS_VALID_OUTPUT_GPIO (sda) || (xshut >= 0 && !GPIO_IS_VALID_OUTPUT_GPIO (xshut)))
-      return 0;
-   if (i2c_driver_install (port, I2C_MODE_MASTER, 0, 0, 0))
-      return NULL;              // Uh?
+   {  ESP_LOGE(TAG, "vl53l0x_config: invalid GPIO scl=%d sda=%d", scl, sda); return NULL; }
+   esp_err_t install_ret = i2c_driver_install (port, I2C_MODE_MASTER, 0, 0, 0);
+   if (install_ret && install_ret != ESP_ERR_INVALID_STATE)
+   {  ESP_LOGE(TAG, "vl53l0x_config: i2c_driver_install port=%d failed: %s", port, esp_err_to_name(install_ret)); return NULL; }
+   if (install_ret == ESP_ERR_INVALID_STATE)
+      ESP_LOGW(TAG, "vl53l0x_config: i2c port %d already installed, reusing", port);
    i2c_config_t config = {
       .mode = I2C_MODE_MASTER,
       .sda_io_num = sda,
       .scl_io_num = scl,
       .sda_pullup_en = true,
       .scl_pullup_en = true,
-      .master.clk_speed = 100000,
+      .master.clk_speed = 10000,
    };
-   if (i2c_param_config (port, &config))
+   esp_err_t cfg_ret = i2c_param_config (port, &config);
+   if (cfg_ret)
    {                            // Config failed
-      i2c_driver_delete (port);
+      ESP_LOGE(TAG, "vl53l0x_config: i2c_param_config port=%d failed: %s", port, esp_err_to_name(cfg_ret));
+      if (!install_ret) i2c_driver_delete (port);   // only delete if we installed it
       return NULL;
    }
    i2c_set_timeout (port, 20);          // Clock stretching (ESP32-S3: 2^20 APB cycles ~= 13ms)

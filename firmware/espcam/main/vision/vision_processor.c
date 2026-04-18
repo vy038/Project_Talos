@@ -45,10 +45,16 @@ static vl53l0x_t *tof_dev        = NULL;
 static uint16_t   last_distance_mm = 0;
 static float      s_ball_radius_mm = 0.0f;
 
-// internal PSRAM buffers — allocated once at init
+// temporal smoothing for centroid (reduces jitter between frames)
+static float      s_smooth_cx = 0.0f;
+static float      s_smooth_cy = 0.0f;
+static const float SMOOTH_ALPHA = 0.65f;  // 0.0 = all previous, 1.0 = all current
+
+// internal PSRAM buffers, allocated once at init
 static uint8_t *s_frame_buf = NULL;
 static uint8_t *s_hsv_buf   = NULL;
 static uint8_t *s_mask_buf  = NULL;
+static uint8_t *s_visited_buf = NULL;
 
 esp_err_t xVisionProcessorInit(void) {
 
@@ -56,8 +62,9 @@ esp_err_t xVisionProcessorInit(void) {
     s_frame_buf = heap_caps_malloc(VISION_CAM_WIDTH * VISION_CAM_HEIGHT * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     s_hsv_buf   = heap_caps_malloc(VISION_CAM_WIDTH * VISION_CAM_HEIGHT * 3, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     s_mask_buf  = heap_caps_malloc(VISION_CAM_WIDTH * VISION_CAM_HEIGHT,     MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    s_visited_buf = heap_caps_malloc(VISION_CAM_WIDTH * VISION_CAM_HEIGHT,   MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 
-    if (!s_frame_buf || !s_hsv_buf || !s_mask_buf) {
+    if (!s_frame_buf || !s_hsv_buf || !s_mask_buf || !s_visited_buf) {
         ESP_LOGE(TAG, "Failed to allocate vision buffers — check PSRAM");
         return ESP_ERR_NO_MEM;
     }
@@ -67,6 +74,35 @@ esp_err_t xVisionProcessorInit(void) {
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Camera init failed");
         return ret;
+    }
+
+    // I2C bus scan on TOF port to find any connected devices
+    {
+        // install driver temporarily for scan (will be reused by vl53l0x_config)
+        i2c_driver_install(TOF_I2C_PORT, I2C_MODE_MASTER, 0, 0, 0);
+        i2c_config_t scan_cfg = {
+            .mode = I2C_MODE_MASTER, .sda_io_num = TOF_SDA_PIN, .scl_io_num = TOF_SCL_PIN,
+            .sda_pullup_en = true, .scl_pullup_en = true, .master.clk_speed = 10000,
+        };
+        // configs for TOF are non-standard (10kHz, strong internal pull-ups)
+        i2c_param_config(TOF_I2C_PORT, &scan_cfg);
+        ESP_LOGI(TAG, "I2C scan on port %d (SDA=%d SCL=%d):", TOF_I2C_PORT, TOF_SDA_PIN, TOF_SCL_PIN);
+        bool found_any = false;
+        // scans bus for any device and attempt to connect
+        for (uint8_t addr = 0x08; addr < 0x78; addr++) {
+            i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+            i2c_master_start(cmd);
+            i2c_master_write_byte(cmd, (addr << 1) | I2C_MASTER_WRITE, true);
+            i2c_master_stop(cmd);
+            esp_err_t s = i2c_master_cmd_begin(TOF_I2C_PORT, cmd, pdMS_TO_TICKS(10));
+            i2c_cmd_link_delete(cmd);
+            if (s == ESP_OK) {
+                ESP_LOGI(TAG, "  found device at 0x%02X", addr);
+                found_any = true;
+            }
+        }
+        if (!found_any) ESP_LOGW(TAG, "  no devices found on I2C bus");
+        i2c_driver_delete(TOF_I2C_PORT);
     }
 
     // init VL53L0X TOF sensor on separate I2C bus
@@ -169,7 +205,7 @@ void vRgbToHsv(uint8_t *rgb_frame, uint8_t *hsv_frame, int width, int height) {
 void vThresholdRedRange(uint8_t *hsv_frame, uint8_t *binary_mask, int width, int height) {
     int num_pixels = width * height;
 
-    // create mask for red objects based on HSV thresholds 
+    // create mask for red objects based on HSV thresholds
     for (int i = 0; i < num_pixels; i++) {
         uint8_t h = hsv_frame[i*3 + 0];
         uint8_t s = hsv_frame[i*3 + 1];
@@ -181,30 +217,96 @@ void vThresholdRedRange(uint8_t *hsv_frame, uint8_t *binary_mask, int width, int
     }
 }
 
-int iFindLargestBlob(uint8_t *binary_mask, int width, int height, int *centroid_x, int *centroid_y) {
-    int largest_blob_size = 0;
-    int sum_x = 0;
-    int sum_y = 0;
-
-    // find largest blob in binary mask and calculate centroid by averaging pixel coordinates TODO: optimize for performance
+// morphological operations to fill holes and smooth blob boundaries
+static void vDilateMask(uint8_t *src, uint8_t *dst, int width, int height) {
+    memcpy(dst, src, width * height);
     for (int y = 0; y < height; y++) {
         for (int x = 0; x < width; x++) {
             int idx = y * width + x;
-            if (binary_mask[idx] == 255) {
-                largest_blob_size++;
-                sum_x += x;
-                sum_y += y;
+            if (src[idx] == 255) { // if pixel is white, set 4-connected neighbors to white as well (dilation)
+                if (x > 0)          dst[idx - 1] = 255;
+                if (x < width - 1)  dst[idx + 1] = 255;
+                if (y > 0)          dst[idx - width] = 255;
+                if (y < height - 1) dst[idx + width] = 255;
             }
         }
     }
+}
 
-    // approximate centroid as average of all pixels in blob
-    if (largest_blob_size > 0) {
-        *centroid_x = sum_x / largest_blob_size;
-        *centroid_y = sum_y / largest_blob_size;
+// erode with 4-connected kernel to remove small noise and smooth edges (dilation followed by erosion = closing)
+static void vErodeMask(uint8_t *src, uint8_t *dst, int width, int height) {
+    memset(dst, 0, width * height);
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            int idx = y * width + x;
+            if (src[idx] != 255) continue;
+
+            bool all_white = true;
+
+            // degrade edges by requiring all 4-connected neighbors to be white to keep pixel white (erosion)
+            if (x > 0 && src[idx - 1] != 255)          all_white = false;
+            if (x < width - 1 && src[idx + 1] != 255)  all_white = false;
+            if (y > 0 && src[idx - width] != 255)      all_white = false;
+            if (y < height - 1 && src[idx + width] != 255) all_white = false;
+
+            if (all_white) dst[idx] = 255;
+        }
+    }
+}
+
+// BFS-based connected component labeling to find largest blob and its centroid
+int iFindLargestBlob(uint8_t *binary_mask, int width, int height, int *centroid_x, int *centroid_y) {
+    int total_pixels = width * height;
+    uint32_t *queue = (uint32_t *)s_hsv_buf;
+    const int queue_max = (VISION_CAM_WIDTH * VISION_CAM_HEIGHT * 3) / sizeof(uint32_t);
+
+    int best_size = 0;
+    long best_sum_x = 0, best_sum_y = 0;
+
+    // clear visited buffer at start of frame
+    memset(s_visited_buf, 0, total_pixels);
+
+    // BFS-based connected component labeling: find largest single blob
+    for (int start = 0; start < total_pixels; start++) {
+        if (binary_mask[start] != 255 || s_visited_buf[start]) continue;
+
+        // BFS from this red pixel
+        int head = 0, tail = 0;
+        queue[tail++] = (uint32_t)start;
+        s_visited_buf[start] = 1; // mark visited
+
+        int blob_size = 0;
+        long sum_x = 0, sum_y = 0;
+
+        while (head < tail) {
+            uint32_t idx = queue[head++];
+            int x = (int)(idx % width);
+            int y = (int)(idx / width);
+            blob_size++;
+            sum_x += x;
+            sum_y += y;
+
+            // 4-connected neighbors (up, down, left, right)
+            if (x > 0          && binary_mask[idx - 1]     == 255 && !s_visited_buf[idx - 1]     && tail < queue_max) { s_visited_buf[idx - 1]     = 1; queue[tail++] = idx - 1; }
+            if (x < width - 1  && binary_mask[idx + 1]     == 255 && !s_visited_buf[idx + 1]     && tail < queue_max) { s_visited_buf[idx + 1]     = 1; queue[tail++] = idx + 1; }
+            if (y > 0          && binary_mask[idx - width]  == 255 && !s_visited_buf[idx - width]  && tail < queue_max) { s_visited_buf[idx - width]  = 1; queue[tail++] = idx - width; }
+            if (y < height - 1 && binary_mask[idx + width]  == 255 && !s_visited_buf[idx + width]  && tail < queue_max) { s_visited_buf[idx + width]  = 1; queue[tail++] = idx + width; }
+        }
+
+        // keep track of largest blob
+        if (blob_size > best_size) {
+            best_size  = blob_size;
+            best_sum_x = sum_x;
+            best_sum_y = sum_y;
+        }
     }
 
-    return largest_blob_size;
+    // centroid of largest blob
+    if (best_size > 0) {
+        *centroid_x = (int)(best_sum_x / best_size);
+        *centroid_y = (int)(best_sum_y / best_size);
+    }
+    return best_size;
 }
 
 float fPixelToAngle(int pixel_x, int frame_width) {
@@ -248,27 +350,38 @@ esp_err_t xVisionDetectBall(ball_detection_t *result) {
         return ESP_FAIL;
     }
 
-    // RGB565 -> HSV -> red threshold -> blob
+    // RGB565 -> HSV -> red threshold -> morphology -> blob
     vRgbToHsv(s_frame_buf, s_hsv_buf, VISION_CAM_WIDTH, VISION_CAM_HEIGHT);
     vThresholdRedRange(s_hsv_buf, s_mask_buf, VISION_CAM_WIDTH, VISION_CAM_HEIGHT);
+
+    // dilate-erode to fill small holes and smooth blob boundaries
+    // reuse s_frame_buf as temporary (no longer needed for raw frame at this point)
+    uint8_t *temp_buf = s_frame_buf;
+    vDilateMask(s_mask_buf, temp_buf, VISION_CAM_WIDTH, VISION_CAM_HEIGHT);
+    vErodeMask(temp_buf, s_mask_buf, VISION_CAM_WIDTH, VISION_CAM_HEIGHT);
 
     int cx = 0, cy = 0;
     int blob_pixels = iFindLargestBlob(s_mask_buf, VISION_CAM_WIDTH, VISION_CAM_HEIGHT, &cx, &cy);
 
     result->detected     = (blob_pixels >= MIN_BLOB_PIXELS);
     result->blob_pixels  = result->detected ? blob_pixels : 0;
-    result->centroid_x   = result->detected ? cx : 0;
-    result->centroid_y   = result->detected ? cy : 0;
     result->pixel_radius = result->detected ? sqrtf((float)blob_pixels / M_PI) : 0.0f;
 
     if (!result->detected) {
         return ESP_OK;
     }
 
+    // temporal smoothing: exponential moving average of centroid to reduce jitter
+    s_smooth_cx = SMOOTH_ALPHA * (float)cx + (1.0f - SMOOTH_ALPHA) * s_smooth_cx;
+    s_smooth_cy = SMOOTH_ALPHA * (float)cy + (1.0f - SMOOTH_ALPHA) * s_smooth_cy;
+
+    result->centroid_x   = (int)(s_smooth_cx + 0.5f);
+    result->centroid_y   = (int)(s_smooth_cy + 0.5f);
+
     // relative position and bearing
-    result->offset_x    = (float)(cx - VISION_CAM_WIDTH  / 2) / (VISION_CAM_WIDTH  / 2.0f);
-    result->offset_y    = (float)(cy - VISION_CAM_HEIGHT / 2) / (VISION_CAM_HEIGHT / 2.0f);
-    result->bearing_deg = fPixelToAngle(cx, VISION_CAM_WIDTH) * (180.0f / M_PI);
+    result->offset_x    = (float)(result->centroid_x - VISION_CAM_WIDTH  / 2) / (VISION_CAM_WIDTH  / 2.0f);
+    result->offset_y    = (float)(result->centroid_y - VISION_CAM_HEIGHT / 2) / (VISION_CAM_HEIGHT / 2.0f);
+    result->bearing_deg = fPixelToAngle(result->centroid_x, VISION_CAM_WIDTH) * (180.0f / M_PI);
 
     // pinhole distance estimate: dist = (real_radius * focal_px) / pixel_radius
     if (s_ball_radius_mm > 0.0f && result->pixel_radius > 0.5f) {
