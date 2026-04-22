@@ -1,31 +1,75 @@
-// test_vl53l0x.c
+/**
+ * @file test_vl53l0x.c
+ * @brief VL53L0X TOF sensor test (isolated, no camera interference)
+ *
+ * Standalone test that doesn't initialize camera or other hardware.
+ * Tests only the VL53L0X sensor on provided I2C pins.
+ *
+ * Wire up:
+ *   VL53L0X SDA → GPIO sda_pin
+ *   VL53L0X SCL → GPIO scl_pin
+ *   VL53L0X GND → GND
+ *   VL53L0X VCC → 3.3V
+ */
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "driver/i2c.h"
+#include "driver/gpio.h"
 #include "vl53l0x.h"
 
+#define TOF_I2C_PORT    I2C_NUM_0
+#define TOF_ADDRESS     0x29
+
 void test_vl53l0x(uint8_t scl, uint8_t sda) {
-    printf("\nVL53L0X Test:\n");
-    
+    printf("\n========================================\n");
+    printf("  VL53L0X Standalone Test\n");
+    printf("  I2C Port 0: SDA=GPIO%d, SCL=GPIO%d\n", sda, scl);
+    printf("  Address: 0x%02X\n", TOF_ADDRESS);
+    printf("  Note: Using internal ESP32 I2C pull-ups\n");
+    printf("========================================\n\n");
+
+    // Enable internal pull-ups on I2C pins (don't install driver — vl53l0x will do it)
+    printf("Enabling GPIO pull-ups on SCL/SDA...\n");
+    gpio_set_pull_mode(scl, GPIO_PULLUP_ONLY);
+    gpio_set_pull_mode(sda, GPIO_PULLUP_ONLY);
+    printf("Pull-ups enabled\n\n");
+
     // Configure: (port, scl, sda, xshut, address, io_2v8)
-    vl53l0x_t *dev = vl53l0x_config(I2C_NUM_0, scl, sda, -1, 0x29, 1);
+    printf("Initializing VL53L0X...\n");
+    vl53l0x_t *dev = vl53l0x_config(TOF_I2C_PORT, scl, sda, -1, TOF_ADDRESS, 1);
     if (!dev) {
-        printf("Config failed\n");
+        printf("ERROR: vl53l0x_config failed\n");
         return;
     }
-    
+
     const char *err = vl53l0x_init(dev);
     if (err) {
-        printf("Init failed: %s\n", err);
+        printf("ERROR: vl53l0x_init failed: %s\n", err);
+        vl53l0x_end(dev);
         return;
     }
-    
-    for (int i = 0; i < 10; i++) {
-        uint16_t distance = vl53l0x_readRangeSingleMillimeters(dev);
+
+    printf("SUCCESS: Sensor initialized\n");
+    vl53l0x_setTimeout(dev, 500);
+    vl53l0x_startContinuous(dev, 0);
+
+    printf("\nReading distances (point your hand at sensor):\n");
+    printf("---\n");
+
+    for (int i = 0; i < 100; i++) {
+        uint16_t distance = vl53l0x_readRangeContinuousMillimeters(dev);
+
         if (vl53l0x_timeoutOccurred(dev)) {
-            printf("Timeout\n");
+            printf("[%3d] TIMEOUT\n", i);
         } else {
-            printf("Distance: %d mm\n", distance);
+            printf("[%3d] Distance: %5d mm\n", i, distance);
         }
-        vTaskDelay(pdMS_TO_TICKS(100));
+
+        vTaskDelay(pdMS_TO_TICKS(200));
     }
-    
+
+    printf("---\n");
     vl53l0x_end(dev);
+    printf("Test complete.\n");
 }

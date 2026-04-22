@@ -10,7 +10,7 @@
 /* ========================================================================== */
 /*  Select which test to run, or TEST_NONE for production                      */
 /* ========================================================================== */
-#define TEST_SELECT TEST_RED_BALL
+#define TEST_SELECT TEST_NONE
 #include "tests.h"
 
 static const char *TAG = "MAIN";
@@ -25,19 +25,19 @@ void app_main(void) {
         return;
     }
 
-    // init visionprocessor
-    ret = xVisionProcessorInit();
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Vision init failed: %d", ret);
-        return;
-    }
+    if (TEST_SELECT == TEST_NONE) {
+        // init visionprocessor only in production (not during tests)
+        ret = xVisionProcessorInit();
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Vision init failed: %d", ret);
+            return;
+        }
 
-    // config radius
-    vVisionSetBallRadius(BALL_RADIUS_MM);
-
-    if (TEST_SELECT != TEST_NONE) {
-        run_test();
-    } else {
+        // config radius
+        vVisionSetBallRadius(BALL_RADIUS_MM);
         xTaskCreate(vVisionTask, "vision", 8192, NULL, 5, NULL);
+    } else {
+        // running a test - skip vision init to avoid port conflicts
+        run_test();
     }
 }

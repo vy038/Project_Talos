@@ -28,6 +28,8 @@
 #define TEST_UART       2
 #define TEST_VL53L0X    3
 #define TEST_RED_BALL   4
+#define TEST_I2C_SCAN   5
+#define TEST_GPIO       6
 
 /* ========================================================================== */
 /*  Test function declarations                                                 */
@@ -37,6 +39,8 @@ void test_camera(void);
 void test_uart(void);
 void test_vl53l0x(uint8_t scl, uint8_t sda);
 void test_red_ball(void);
+void test_i2c_scan(uint8_t scl, uint8_t sda);
+void test_gpio(void);
 
 /* ========================================================================== */
 /*  Test runner                                                                */
@@ -71,6 +75,14 @@ static inline void run_test(void) {
         case TEST_RED_BALL:
             printf("[TEST] Red Ball Detection\n");
             test_red_ball();
+            break;
+        case TEST_I2C_SCAN:
+            printf("[TEST] I2C Address Scanner\n");
+            test_i2c_scan(TESTS_TOF_SCL, TESTS_TOF_SDA);
+            break;
+        case TEST_GPIO:
+            printf("[TEST] GPIO 40/41 Toggle\n");
+            test_gpio();
             break;
         default:
             printf("[INFO] No test selected.\n");
