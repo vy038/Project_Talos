@@ -16,16 +16,7 @@ static robot_state_t current_state = STATE_INIT;
 static int64_t state_enter_time = 0;
 static detection_result_t last_detection = {0};
 static bool grab_prep_arm_sent = false;
-static gait_type_t active_gait = GAIT_TRIPOD; // initial gait
 static uint16_t s_prev_tof_mm = 0;            // last valid TOF reading during approach, for spike detection
-
-// helper function to switch gait if not already set, avoids mid-stride gait switches which cause leg snapping
-static void set_gait_if_needed(gait_type_t type) {
-    if (active_gait != type) {
-        vGaitSetType(type);
-        active_gait = type;
-    }
-}
 
 // get time spent in state
 static uint32_t ms_in_state(void) {
@@ -88,7 +79,7 @@ static void handle_idle(void) {
 }
 
 static void handle_search(void) {
-    set_gait_if_needed(GAIT_TRIPOD);
+    vGaitSetType(GAIT_TRIPOD);
     // tells robot to turn 360 right slowly while looking for the ball
     vGaitSetCommand(MOVE_TURN_RIGHT, 0.2f);
 
@@ -119,9 +110,9 @@ static void handle_align(void) {
     // use tripod for coarse correction (avoids mid-stride gait switch from searching, causing janky leg movement)
     int coarse_offset = (int)last_detection.ball_x - (CAM_FRAME_WIDTH / 2);
     if (abs(coarse_offset) > ALIGN_COARSE_THRESHOLD_X) {
-        set_gait_if_needed(GAIT_TRIPOD);
+        vGaitSetType(GAIT_TRIPOD);
     } else { // switch to wave only for fine alignment when nearly centred
-        set_gait_if_needed(GAIT_WAVE);
+        vGaitSetType(GAIT_WAVE);
     }
 
     if (!last_detection.fresh) {
@@ -162,7 +153,7 @@ static void handle_align(void) {
 }
 
 static void handle_approach(void) {
-    set_gait_if_needed(GAIT_TRIPOD);
+    vGaitSetType(GAIT_TRIPOD);
 
     // speed control: use VL53L0X as authoritative distance.
     // if TOF has no reading yet (ball not in beam), creep forward slowly.
