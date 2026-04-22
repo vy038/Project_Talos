@@ -27,6 +27,23 @@ SemaphoreHandle_t xI2CMutex;
 TaskHandle_t xGaitTaskHandle;
 TaskHandle_t xUartCamTaskHandle;
 
+// void vStackMonitorTask(void *pvParameters) {
+//     const char *task_names[] = {"power_mon", "uart_cam", "gait", "arm_ctrl", "balance", "state_mach", "IDLE"};
+//     const int num_tasks = sizeof(task_names) / sizeof(task_names[0]);
+
+//     while (1) {
+//         printf("\n=== Stack High Water Mark ===\n");
+//         for (int i = 0; i < num_tasks; i++) {
+//             TaskHandle_t handle = xTaskGetHandle(task_names[i]);
+//             if (handle != NULL) {
+//                 UBaseType_t hwm = uxTaskGetStackHighWaterMark(handle);
+//                 printf("%s: %u bytes free\n", task_names[i], hwm * sizeof(StackType_t));
+//             }
+//         }
+//         vTaskDelay(pdMS_TO_TICKS(5000));
+//     }
+// }
+
 void app_main(void) {
 
     // declare queues/semaphores
@@ -65,12 +82,24 @@ void app_main(void) {
     }
 
     // make all tasks
-    xTaskCreatePinnedToCore(vPowerMonTask,     "power_mon",  2048, NULL, 1, NULL,                   1);
+
+    /*  stack usage
+        power_mon:  2292 bytes free
+        uart_cam:   2472 bytes free
+        gait:       2204 bytes free
+        arm_ctrl:   2224 bytes free
+        balance:    2076 bytes free
+        state_mach: 2208 bytes free
+        IDLE:       1036 bytes free
+    */
+
+    xTaskCreatePinnedToCore(vPowerMonTask,     "power_mon",  4096, NULL, 1, NULL,                   1);
     xTaskCreatePinnedToCore(vUartCamTask,      "uart_cam",   3072, NULL, 3, &xUartCamTaskHandle,    1);
-    xTaskCreatePinnedToCore(vGaitTask,         "gait",       4096, NULL, 5, &xGaitTaskHandle,       1);
-    xTaskCreatePinnedToCore(vArmCtrlTask,      "arm_ctrl",   4096, NULL, 6, NULL,                   1);
+    xTaskCreate            (vGaitTask,         "gait",       4096, NULL, 5, &xGaitTaskHandle         );
+    xTaskCreate            (vArmCtrlTask,      "arm_ctrl",   4096, NULL, 6, NULL                     );
     if (mpu_available) {
-        xTaskCreatePinnedToCore(vBalanceTask,  "balance",    3072, NULL, 5, NULL,                   1);
+        xTaskCreatePinnedToCore(vBalanceTask,  "balance",    4096, NULL, 5, NULL,                   1);
     }
     xTaskCreatePinnedToCore(vStateMachineTask, "state_mach", 4096, NULL, 4, NULL,                   1);
+    // xTaskCreatePinnedToCore(vStackMonitorTask, "stack_mon",  2048, NULL, 1, NULL,                   0);
 }
