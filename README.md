@@ -16,8 +16,9 @@ Scorpion-style hexapod with a 3-DOF arm and computer vision. Wanted to build som
 - Arm kinematics (tested, working)
 - Walking gait (tested, working)
 - Simulator is demoable (tripod/wave/ripple, arm IK, physics ball)
-- Full RTOS architecture (not on hardware yet)
-- Sensors (MPU6050, ACS712, ToF, camera) not wired up yet
+- Full RTOS architecture
+- Some sensors (MPU6050, ACS712, ToF) not wired up yet
+- Waiting on new ToF Sensor
 - End-to-end autonomous demo (end goal)
 
 ---
