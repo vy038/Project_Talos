@@ -177,6 +177,13 @@ int main(int argc, char *argv[]) {
     /* Run the firmware entry point */
     app_main();
 
+    /* app_main returns after spawning tasks, keep the process alive so the
+     * pthread-backed FreeRTOS tasks continue running, matching real RTOS behaviour
+     * where the scheduler keeps running after app_main's task exits. */
+    while (running) {
+        usleep(100000);
+    }
+
     fprintf(stderr, "\nSimulation ended.\n");
     return 0;
 }
