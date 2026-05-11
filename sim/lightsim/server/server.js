@@ -2,11 +2,15 @@
  * @file server.js
  * @brief Bridge server for Lightsim
  *
- * - Spawns the C simulator as a child process
+ * - Spawns the C simulator as a child process per WebSocket session
  * - Reads JSON lines from simulator's stdout
- * - Forwards state updates to connected browsers via WebSocket
+ * - Forwards state updates to the owning browser client via WebSocket
  * - Serves the frontend static files
  * - Provides REST API for control inputs (sensor injection, recompile)
+ *
+ * Multi-user isolation: each WebSocket connection gets its own simulator
+ * process on a unique TCP injection port. The browser receives a session ID
+ * on connect and passes it as ?sid= in every REST API call.
  */
 
 const express = require('express');
@@ -16,13 +20,54 @@ const path = require('path');
 const http = require('http');
 const readline = require('readline');
 const net = require('net');
-
-const INJECTION_PORT = 9998;
+const crypto = require('crypto');
 
 const PORT = process.env.PORT || 3000;
 const SIM_PATH = path.join(__dirname, '..', 'build', 'talos_sim');
 const FRONTEND_PATH = path.join(__dirname, '..', 'frontend');
 const ESPCAM_TESTS_PATH = path.join(__dirname, '..', '..', '..', 'firmware', 'espcam', 'tests');
+
+// ============================================================================
+// Session management
+// ============================================================================
+
+// Each entry: { sid, ws, simProcess, injSocket, injReconnectTimer, injPort, latestState }
+const sessions = new Map();
+let nextInjPort = 10000;
+
+function allocPort() {
+    return nextInjPort++;
+}
+
+function createSession(ws) {
+    const sid = crypto.randomUUID();
+    const session = {
+        sid,
+        ws,
+        simProcess: null,
+        injSocket: null,
+        injReconnectTimer: null,
+        injPort: allocPort(),
+        latestState: null,
+    };
+    sessions.set(sid, session);
+    ws.send(JSON.stringify({ type: 'session', sid }));
+    console.log(`[SESSION] Created ${sid.slice(0, 8)} on inj-port ${session.injPort}`);
+    return session;
+}
+
+function destroySession(sid) {
+    const session = sessions.get(sid);
+    if (!session) return;
+    killSimulator(session);
+    sessions.delete(sid);
+    console.log(`[SESSION] Destroyed ${sid.slice(0, 8)}`);
+}
+
+function getSession(req) {
+    const sid = req.query.sid || (req.body && req.body.sid);
+    return sid ? sessions.get(sid) : null;
+}
 
 // ============================================================================
 // Express app + HTTP server
@@ -36,20 +81,17 @@ app.use('/espcam', express.static(ESPCAM_TESTS_PATH));
 const server = http.createServer(app);
 
 // ============================================================================
-// WebSocket server
+// WebSocket servers
 // ============================================================================
 
 const wss = new WebSocketServer({ noServer: true });
-let latestState = null;
 
 // Camera WebSocket server (path /camera) — feeds test_red_ball.html
 const camWss = new WebSocketServer({ noServer: true });
 let camFrameCount = 0;
 
-// URL routing for WebSockets over the single HTTP port
 server.on('upgrade', (request, socket, head) => {
-    const pathname = request.url;
-    if (pathname === '/camera') {
+    if (request.url === '/camera') {
         camWss.handleUpgrade(request, socket, head, (ws) => {
             camWss.emit('connection', ws, request);
         });
@@ -68,37 +110,25 @@ function broadcastCamera(data) {
 }
 
 wss.on('connection', (ws) => {
-    console.log(`[WS] Client connected (total: ${wss.clients.size})`);
+    const session = createSession(ws);
 
-    // Send latest state immediately so client doesn't start blank
-    if (latestState) {
-        ws.send(latestState);
-    }
+    if (session.latestState) ws.send(session.latestState);
 
-    // Handle messages from browser (camera detection data, etc.)
     ws.on('message', (raw) => {
         try {
             const msg = JSON.parse(raw);
-            if (msg.type && msg.type !== 'tof_update') {
-                console.log(`[WS←Browser] type=${msg.type} pkt=${msg.pkt ? 'yes' : 'NO'}`);
-            }
             if (msg.type === 'tof_update') {
-                // Forward ToF distance to C sim so vl53l0x_stub returns correct value
-                injWrite(JSON.stringify({ type: 'tof', mm: msg.tof_mm }) + '\n');
+                injWrite(session, JSON.stringify({ type: 'tof', mm: msg.tof_mm }) + '\n');
             } else if (msg.type === 'camera_detection') {
-                // Forward simulated camera detection to camera WS (port 8765)
                 camFrameCount++;
                 msg.frame = camFrameCount;
                 delete msg.type;
                 broadcastCamera(msg);
-
-                // Inject the pre-built UART packet directly into the C simulator.
-                // viewer3d.js already built and checksummed msg.pkt (hex string).
                 if (msg.pkt) {
                     const bytes = Buffer.from(msg.pkt, 'hex');
-                    injWrite(bytes);
+                    injWrite(session, bytes);
                     if (msg.det) {
-                        console.log(`[CAM→SIM] Injected ${bytes.length}B: ${msg.pkt.substring(0,22)}... det=${msg.det} cx=${msg.cx} cy=${msg.cy}`);
+                        console.log(`[CAM→SIM] ${session.sid.slice(0,8)} injected ${bytes.length}B det=${msg.det}`);
                     }
                 }
             }
@@ -106,114 +136,91 @@ wss.on('connection', (ws) => {
     });
 
     ws.on('close', () => {
-        console.log(`[WS] Client disconnected (total: ${wss.clients.size})`);
+        console.log(`[WS] Disconnected ${session.sid.slice(0, 8)}`);
+        destroySession(session.sid);
     });
 });
 
-function broadcast(jsonLine) {
-    const data = jsonLine;
-    for (const client of wss.clients) {
-        if (client.readyState === 1) { // OPEN
-            client.send(data);
+// ============================================================================
+// Per-session simulator management
+// ============================================================================
+
+function injWrite(session, data) {
+    if (session.injSocket && !session.injSocket.destroyed) {
+        session.injSocket.write(data);
+    }
+}
+
+function connectInjection(session) {
+    if (session.injReconnectTimer) { clearTimeout(session.injReconnectTimer); session.injReconnectTimer = null; }
+    if (session.injSocket && !session.injSocket.destroyed) {
+        session.injSocket.removeAllListeners();
+        session.injSocket.destroy();
+    }
+
+    session.injSocket = new net.Socket();
+    session.injSocket.connect(session.injPort, '127.0.0.1', () => {
+        console.log(`[${session.sid.slice(0,8)}][INJ] Connected on port ${session.injPort}`);
+    });
+    session.injSocket.on('error', () => { /* sim not ready yet, will retry */ });
+    session.injSocket.on('close', () => {
+        session.injSocket = null;
+        // Only retry if session still exists
+        if (sessions.has(session.sid)) {
+            session.injReconnectTimer = setTimeout(() => connectInjection(session), 500);
         }
-    }
-}
-
-// ============================================================================
-// Simulator process management
-// ============================================================================
-
-let simProcess = null;
-
-// ============================================================================
-// TCP injection client — connects to the C sim's injection server (port 9998)
-// ============================================================================
-
-let injSocket = null;
-let injReconnectTimer = null;
-
-function injWrite(data) {
-    if (injSocket && !injSocket.destroyed) {
-        injSocket.write(data);
-    }
-}
-
-function connectInjection() {
-    if (injReconnectTimer) { clearTimeout(injReconnectTimer); injReconnectTimer = null; }
-    if (injSocket && !injSocket.destroyed) { injSocket.removeAllListeners(); injSocket.destroy(); }
-
-    injSocket = new net.Socket();
-    injSocket.connect(INJECTION_PORT, '127.0.0.1', () => {
-        console.log('[INJ] Connected to sim injection server');
-    });
-    injSocket.on('error', () => { /* sim not ready yet, will retry */ });
-    injSocket.on('close', () => {
-        injSocket = null;
-        injReconnectTimer = setTimeout(connectInjection, 500);
     });
 }
 
-function killSimulator() {
-    if (!simProcess) return;
-    console.log('[SIM] Killing simulator...');
-    if (injReconnectTimer) { clearTimeout(injReconnectTimer); injReconnectTimer = null; }
-    if (injSocket) { injSocket.removeAllListeners(); injSocket.destroy(); injSocket = null; }
-    simProcess.kill('SIGTERM');
-    // Force kill after 500ms if SIGTERM didn't work
-    const proc = simProcess;
-    setTimeout(() => {
-        try { proc.kill('SIGKILL'); } catch (e) { /* already dead */ }
-    }, 500);
-    simProcess = null;
+function killSimulator(session) {
+    if (session.injReconnectTimer) { clearTimeout(session.injReconnectTimer); session.injReconnectTimer = null; }
+    if (session.injSocket) { session.injSocket.removeAllListeners(); session.injSocket.destroy(); session.injSocket = null; }
+    if (!session.simProcess) return;
+    console.log(`[${session.sid.slice(0,8)}][SIM] Killing simulator`);
+    session.simProcess.kill('SIGTERM');
+    const proc = session.simProcess;
+    setTimeout(() => { try { proc.kill('SIGKILL'); } catch (e) {} }, 500);
+    session.simProcess = null;
 }
 
-function startSimulator() {
-    if (simProcess) {
-        killSimulator();
-    }
+function startSimulator(session) {
+    if (session.simProcess) killSimulator(session);
 
-    console.log(`[SIM] Starting: ${SIM_PATH} --json`);
-    simProcess = spawn(SIM_PATH, ['--json'], {
+    console.log(`[${session.sid.slice(0,8)}][SIM] Starting with inj-port ${session.injPort}`);
+    session.simProcess = spawn(SIM_PATH, ['--json', '--inj-port', String(session.injPort)], {
         stdio: ['ignore', 'pipe', 'pipe'],
     });
 
-    // Connect injection client after a short delay to let the C server socket bind
-    setTimeout(connectInjection, 300);
+    setTimeout(() => connectInjection(session), 300);
 
-    // Read JSON lines from stdout
-    const rl = readline.createInterface({ input: simProcess.stdout });
+    const rl = readline.createInterface({ input: session.simProcess.stdout });
     rl.on('line', (line) => {
         if (line.startsWith('{')) {
-            latestState = line;
-            broadcast(line);
+            session.latestState = line;
+            if (session.ws.readyState === 1) session.ws.send(line);
         }
     });
 
-    // Forward simulator stderr to our console AND to browser via WebSocket
     let stderrBuf = '';
-    simProcess.stderr.on('data', (data) => {
-        const text = data.toString();
-        process.stderr.write(`[FW] ${text}`);
-
-        // Buffer and split into lines (stderr can arrive in chunks)
-        stderrBuf += text;
+    session.simProcess.stderr.on('data', (data) => {
+        stderrBuf += data.toString();
         const lines = stderrBuf.split('\n');
-        stderrBuf = lines.pop(); // keep incomplete last line in buffer
+        stderrBuf = lines.pop();
         for (const line of lines) {
-            if (line.trim()) {
-                broadcast(JSON.stringify({ type: 'log', message: line }));
+            if (line.trim() && session.ws.readyState === 1) {
+                session.ws.send(JSON.stringify({ type: 'log', message: line }));
             }
         }
     });
 
-    simProcess.on('exit', (code, signal) => {
-        console.log(`[SIM] Process exited (code=${code}, signal=${signal})`);
-        simProcess = null;
+    session.simProcess.on('exit', (code, signal) => {
+        console.log(`[${session.sid.slice(0,8)}][SIM] Exited (code=${code}, signal=${signal})`);
+        session.simProcess = null;
     });
 
-    simProcess.on('error', (err) => {
-        console.error(`[SIM] Failed to start: ${err.message}`);
-        simProcess = null;
+    session.simProcess.on('error', (err) => {
+        console.error(`[${session.sid.slice(0,8)}][SIM] Failed to start: ${err.message}`);
+        session.simProcess = null;
     });
 }
 
@@ -221,126 +228,122 @@ function startSimulator() {
 // REST API
 // ============================================================================
 
-// Recompile and restart ("flash")
-app.post('/api/compile', (req, res) => {
-    console.log('[API] Recompile requested...');
-    // Kill current sim forcefully immediately
-    if (simProcess) {
-        try { simProcess.kill('SIGKILL'); } catch (e) {}
-        simProcess = null;
-    }
-    killSimulator(); // Cleanup sockets
+// Shared compile lock — only one build at a time
+let compiling = false;
 
-    // Full configure + build (works even on first run with no prior build)
+app.post('/api/compile', (req, res) => {
+    const session = getSession(req);
+    if (!session) return res.status(400).json({ status: 'error', message: 'Missing or invalid ?sid=' });
+
+    if (compiling) return res.status(409).json({ status: 'error', message: 'Build already in progress' });
+    compiling = true;
+    console.log(`[${session.sid.slice(0,8)}][API] Recompile requested`);
+
+    // Kill only this session's simulator before rebuilding
+    if (session.simProcess) {
+        try { session.simProcess.kill('SIGKILL'); } catch (e) {}
+        session.simProcess = null;
+    }
+    killSimulator(session);
+
     const projectDir = path.join(__dirname, '..');
-    const buildDir = path.join(projectDir, 'build');
-    const { exec } = require('child_process');
-    const buildCmd = `mkdir -p "${buildDir}" && cd "${buildDir}" && cmake .. && cmake --build . -j$(nproc)`;
+    const buildDir   = path.join(projectDir, 'build');
+    const { exec }   = require('child_process');
+    const buildCmd   = `mkdir -p "${buildDir}" && cd "${buildDir}" && cmake .. && cmake --build . -j$(nproc)`;
 
     exec(buildCmd, { timeout: 120000 }, (error, stdout, stderr) => {
+        compiling = false;
         if (error) {
             console.error(`[API] Build failed: ${error.message}`);
             return res.status(500).json({ status: 'error', message: stderr || error.message });
         }
         console.log('[API] Build succeeded');
-        startSimulator();
+        startSimulator(session);
         res.json({ status: 'ok', message: 'Compiled and started' });
     });
 });
 
-// Build and inject an 11-byte detection UART packet into the C simulator stdin.
-// The C sim's stdin reader calls sim_uart_inject() which fills the virtual UART
-// buffer, making it available to uart_cam_task's xUARTReadTimeout().
-function injectDetectionPacket({ detected, ball_x, ball_y, ball_radius }) {
+function injectDetectionPacket(session, { detected, ball_x, ball_y, ball_radius }) {
     const packet = Buffer.alloc(11);
-    packet[0] = 0xAA;
-    packet[1] = 0x55;
-    packet[2] = 0x01;
-    packet[3] = detected ? 1 : 0;
-    packet[4] = (ball_x >> 8) & 0xFF;
-    packet[5] =  ball_x       & 0xFF;
-    packet[6] = (ball_y >> 8) & 0xFF;
-    packet[7] =  ball_y       & 0xFF;
-    packet[8] = (ball_radius >> 8) & 0xFF;
-    packet[9] =  ball_radius       & 0xFF;
-    let checksum = 0;
-    for (let i = 2; i < 10; i++) checksum ^= packet[i];
-    packet[10] = checksum;
-
-    injWrite(packet);
+    packet[0]  = 0xAA;
+    packet[1]  = 0x55;
+    packet[2]  = 0x01;
+    packet[3]  = detected ? 1 : 0;
+    packet[4]  = (ball_x >> 8) & 0xFF;
+    packet[5]  =  ball_x       & 0xFF;
+    packet[6]  = (ball_y >> 8) & 0xFF;
+    packet[7]  =  ball_y       & 0xFF;
+    packet[8]  = (ball_radius >> 8) & 0xFF;
+    packet[9]  =  ball_radius       & 0xFF;
+    let chk = 0;
+    for (let i = 2; i < 10; i++) chk ^= packet[i];
+    packet[10] = chk;
+    injWrite(session, packet);
     return true;
 }
 
-// Inject ball detection (simulated camera UART packet)
 app.post('/api/inject/detection', (req, res) => {
+    const session = getSession(req);
+    if (!session) return res.status(400).json({ status: 'error', message: 'Missing or invalid ?sid=' });
     const { detected, ball_x, ball_y, ball_radius } = req.body;
-    if (injectDetectionPacket({ detected, ball_x, ball_y, ball_radius })) {
-        res.json({ status: 'ok' });
-    } else {
-        res.status(503).json({ status: 'error', message: 'Simulator not running' });
-    }
-});
-
-// Kill Simulator gracefully
-app.post('/api/kill', (req, res) => {
-    killSimulator();
-    res.json({ status: 'ok', message: 'Simulator killed' });
-});
-
-// Start simulator using existing binary (no recompile)
-app.post('/api/start', (req, res) => {
-    startSimulator();
-    res.json({ status: 'ok', message: 'Simulator started' });
-});
-
-// Movement command (from D-pad / keyboard)
-let latestCommand = { type: 'move', command: 'stop', speed: 0, gait: 0 };
-app.post('/api/command', (req, res) => {
-    latestCommand = req.body;
-    injWrite(JSON.stringify(req.body) + '\n');
+    injectDetectionPacket(session, { detected, ball_x, ball_y, ball_radius });
     res.json({ status: 'ok' });
 });
 
-// Run test sequence
-app.post('/api/test', (req, res) => {
-    const testName = req.body.test || 'gait';
-    
-    // Forcefully wipe the simulator clean before the test
-    if (simProcess) {
-        try { simProcess.kill('SIGKILL'); } catch (e) {}
-        simProcess = null;
-    }
-    killSimulator();
-    
-    // Boot a fresh instance
-    startSimulator();
+app.post('/api/kill', (req, res) => {
+    const session = getSession(req);
+    if (!session) return res.status(400).json({ status: 'error', message: 'Missing or invalid ?sid=' });
+    killSimulator(session);
+    res.json({ status: 'ok', message: 'Simulator killed' });
+});
 
-    // Wait 1 second for boot and socket connection, then inject the test command
+app.post('/api/start', (req, res) => {
+    const session = getSession(req);
+    if (!session) return res.status(400).json({ status: 'error', message: 'Missing or invalid ?sid=' });
+    startSimulator(session);
+    res.json({ status: 'ok', message: 'Simulator started' });
+});
+
+app.post('/api/command', (req, res) => {
+    const session = getSession(req);
+    if (!session) return res.status(400).json({ status: 'error', message: 'Missing or invalid ?sid=' });
+    injWrite(session, JSON.stringify(req.body) + '\n');
+    res.json({ status: 'ok' });
+});
+
+app.post('/api/test', (req, res) => {
+    const session = getSession(req);
+    if (!session) return res.status(400).json({ status: 'error', message: 'Missing or invalid ?sid=' });
+    const testName = req.body.test || 'gait';
+
+    if (session.simProcess) {
+        try { session.simProcess.kill('SIGKILL'); } catch (e) {}
+        session.simProcess = null;
+    }
+    killSimulator(session);
+    startSimulator(session);
+
     setTimeout(() => {
-        injWrite(JSON.stringify({ type: 'test', test: testName }) + '\n');
+        injWrite(session, JSON.stringify({ type: 'test', test: testName }) + '\n');
     }, 1000);
 
     res.json({ status: 'ok', test: testName, message: 'Simulator wiped and test scheduled' });
 });
 
-// Force state machine transition
 app.post('/api/control/state', (req, res) => {
-    // TODO: implement when stdin command protocol is added to simulator
     res.json({ status: 'ok', message: 'Not yet implemented' });
 });
 
-// Set simulated sensor values
 app.post('/api/control/sensor', (req, res) => {
-    // TODO: implement when stdin command protocol is added to simulator
     res.json({ status: 'ok', message: 'Not yet implemented' });
 });
 
-// Get current status
 app.get('/api/status', (req, res) => {
+    const session = getSession(req);
     res.json({
-        simulator: simProcess ? 'running' : 'stopped',
-        clients: wss.clients.size,
-        lastUpdate: latestState ? JSON.parse(latestState).timestamp_us : null,
+        simulator: session && session.simProcess ? 'running' : 'stopped',
+        sessions: sessions.size,
+        lastUpdate: session && session.latestState ? JSON.parse(session.latestState).timestamp_us : null,
     });
 });
 
@@ -356,16 +359,15 @@ server.listen(PORT, '0.0.0.0', () => {
     console.log('[SIM] Waiting for launch command from UI...');
 });
 
-// Cleanup on exit
 process.on('SIGINT', () => {
     console.log('\nShutting down...');
-    killSimulator();
+    for (const [sid] of sessions) destroySession(sid);
     server.close();
     process.exit(0);
 });
 
 process.on('SIGTERM', () => {
-    killSimulator();
+    for (const [sid] of sessions) destroySession(sid);
     server.close();
     process.exit(0);
 });

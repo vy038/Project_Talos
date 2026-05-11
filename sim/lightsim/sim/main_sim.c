@@ -27,7 +27,7 @@
 #include <errno.h>
 #include "sim_state.h"
 
-#define INJECTION_PORT 9998
+#define INJECTION_PORT_DEFAULT 9998
 
 /* Forward declarations of firmware entry point and state getter */
 extern void app_main(void);
@@ -75,11 +75,11 @@ static void process_injection_buf(uint8_t *buf, size_t *buf_len) {
 
 /*
  * TCP injection server thread.
- * Listens on 127.0.0.1:9998, accepts one client at a time, reads
- * injection bytes and dispatches them.
+ * Listens on 127.0.0.1:<port>, accepts one client at a time, reads
+ * injection bytes and dispatches them. Port passed via arg.
  */
 static void *injection_server_thread(void *arg) {
-    (void)arg;
+    int port = (int)(uintptr_t)arg;
 
     int srv = socket(AF_INET, SOCK_STREAM, 0);
     if (srv < 0) {
@@ -93,7 +93,7 @@ static void *injection_server_thread(void *arg) {
     struct sockaddr_in addr = {
         .sin_family      = AF_INET,
         .sin_addr.s_addr = htonl(INADDR_LOOPBACK),
-        .sin_port        = htons(INJECTION_PORT),
+        .sin_port        = htons((uint16_t)port),
     };
     if (bind(srv, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         fprintf(stderr, "[INJ] bind() failed: %s\n", strerror(errno));
@@ -101,7 +101,7 @@ static void *injection_server_thread(void *arg) {
         return NULL;
     }
     listen(srv, 1);
-    fprintf(stderr, "[INJ] Injection server ready on 127.0.0.1:%d\n", INJECTION_PORT);
+    fprintf(stderr, "[INJ] Injection server ready on 127.0.0.1:%d\n", port);
     fflush(stderr);
 
     while (1) {
@@ -138,8 +138,6 @@ static void sigint_handler(int sig) {
 }
 
 int main(int argc, char *argv[]) {
-    (void)argc; (void)argv;
-
     signal(SIGINT, sigint_handler);
     signal(SIGTERM, sigint_handler);
 
@@ -147,11 +145,14 @@ int main(int argc, char *argv[]) {
     setvbuf(stdout, NULL, _IONBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);
 
-    /* Check for --json flag to enable JSON state emission on stdout */
+    /* Parse flags */
     bool json_mode = false;
+    int  injection_port = INJECTION_PORT_DEFAULT;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--json") == 0) {
             json_mode = true;
+        } else if (strcmp(argv[i], "--inj-port") == 0 && i + 1 < argc) {
+            injection_port = atoi(argv[++i]);
         }
     }
 
@@ -168,7 +169,7 @@ int main(int argc, char *argv[]) {
 
     /* Start TCP injection server — replaces stdin pipe (which had buffering issues) */
     pthread_t inj_thread;
-    pthread_create(&inj_thread, NULL, injection_server_thread, NULL);
+    pthread_create(&inj_thread, NULL, injection_server_thread, (void *)(uintptr_t)injection_port);
     pthread_detach(inj_thread);
 
     /* Bridge: let sim_state poll robot state without including firmware headers */

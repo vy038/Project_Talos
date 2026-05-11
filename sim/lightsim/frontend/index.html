@@ -334,7 +334,7 @@
             status.className = 'splash-status active';
 
             try {
-                const res = await fetch('/api/compile', { method: 'POST' });
+                const res = await fetch(`/api/compile?sid=${window._simSid || ''}`, { method: 'POST' });
                 const data = await res.json();
                 if (data.status === 'ok') {
                     status.textContent = 'System online.';
@@ -387,7 +387,7 @@
             btn.disabled = true;
 
             try {
-                const res = await fetch('/api/compile', { method: 'POST' });
+                const res = await fetch(`/api/compile?sid=${window._simSid || ''}`, { method: 'POST' });
                 const data = await res.json();
                 btn.textContent = data.status === 'ok' ? 'OK' : 'FAILED';
             } catch (e) {
@@ -417,7 +417,7 @@
             if (window.resetRobotPosition) window.resetRobotPosition();
             
             // Kill simulator (go offline)
-            fetch('/api/kill', { method: 'POST' }).catch(() => {});
+            fetch(`/api/kill?sid=${window._simSid || ''}`, { method: 'POST' }).catch(() => {});
         });
 
         // ── D-pad & keyboard movement ────────────────────────────────────────
@@ -431,7 +431,7 @@
                 window.GaitControl.active = cmd.command !== 'stop';
                 window.GaitControl.phase = 0;
             }
-            fetch('/api/command', {
+            fetch(`/api/command?sid=${window._simSid || ''}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(cmd)

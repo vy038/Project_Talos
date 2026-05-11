@@ -53,11 +53,11 @@ window.SimWS = { send: function() {} };
             try {
                 const msg = JSON.parse(event.data);
 
-                if (msg.type === 'log') {
-                    // Dispatch serial log as a DOM event for debugview
+                if (msg.type === 'session') {
+                    window._simSid = msg.sid;
+                } else if (msg.type === 'log') {
                     window.dispatchEvent(new CustomEvent('sim-log', { detail: msg.message }));
                 } else {
-                    // Normal state update
                     SimState.dispatch(msg);
                 }
             } catch (e) {
