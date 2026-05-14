@@ -59,76 +59,123 @@ bool bIKIsReachable(const ik_target_t *target) {
     return (dist <= max_reach && dist >= min_reach);
 }
 
+/**
+ * Solve inverse kinematics for a 3-DOF arm with a forward-tilted base.
+ *
+ * High level: the gripper tip must reach (target->x, target->y, target->z) in
+ * the robot body frame (x=forward, y=left, z=up). We solve in four stages and
+ * log every intermediate so misbehaviour can be pinpointed from serial output.
+ *
+ *   [1] Base rotation: yaw the whole arm in the horizontal plane to face the
+ *       ball. Computed from atan2(y, x) and shifted by +90° because the servo
+ *       convention puts 90° at center (forward), not 0°.
+ *
+ *   [2] Project the target into the arm's tilted vertical plane: the shoulder
+ *       axis is tilted ARM_BASE_ANGLE forward, so the (x, z) coordinates have
+ *       to be rotated to match the arm's reference frame.
+ *
+ *   [3] Subtract link3 (the rigid gripper segment): the 2-link shoulder/elbow
+ *       solver positions the *wrist*, not the gripper tip. We back off by the
+ *       link3 vector to get the wrist target.
+ *
+ *   [4] Law of cosines on the (shoulder, elbow, wrist) triangle to recover
+ *       shoulder + elbow joint angles. Each is clamped to its joint limit and
+ *       a warning is logged if the unclamped value was outside the limit.
+ *
+ * Every joint clamp is announced via WARN, every step values at INFO so you
+ * can watch the pipeline in real time on the serial console.
+ */
 esp_err_t xIKSolve(const ik_target_t *target, ik_solution_t *solution) {
-
     if (!target || !solution) {
         return ESP_ERR_INVALID_ARG;
     }
 
     solution->valid = false;
 
-    float base_tilt_rad = DEG_TO_RAD(ARM_BASE_ANGLE);
+    ESP_LOGI(TAG, "── xIKSolve start ──");
+    ESP_LOGI(TAG, "[in ] target arm-frame (x=%.1f, y=%.1f, z=%.1f) mm",
+             target->x, target->y, target->z);
 
-    // offset by shoulder height before rotating
-    float target_z_offset = target->z - ARM_BASE_HEIGHT;
+    float base_tilt_rad   = DEG_TO_RAD(ARM_BASE_ANGLE);
+    float target_z_offset = target->z - ARM_BASE_HEIGHT;     // height above shoulder pivot
+    float r_horiz         = sqrtf(target->x * target->x + target->y * target->y);
 
-    // rotate target into the tilted arm frame (Y-axis rotation, tilt is forward in X)
-    float x_plane = target->x * cosf(base_tilt_rad) + target_z_offset * sinf(base_tilt_rad);
-    float y_plane = target->y;
-    float z_plane = -target->x * sinf(base_tilt_rad) + target_z_offset * cosf(base_tilt_rad);
+    ESP_LOGI(TAG, "[geo] base_tilt=%.1f° base_height=%.1f r_horiz=%.2f z_off=%.2f",
+             ARM_BASE_ANGLE, ARM_BASE_HEIGHT, r_horiz, target_z_offset);
 
-    // base rotation points the arm toward the target in the tilted frame
-    solution->base_rotation = RAD_TO_DEG(atan2f(y_plane, x_plane));
-    solution->base_rotation = CLAMP(solution->base_rotation, BASE_ROTATION_MIN, BASE_ROTATION_MAX);
+    // [1] Base rotation — atan2 frame (0=forward) shifted to servo frame (90=center)
+    float base_raw = 90.0f + RAD_TO_DEG(atan2f(target->y, target->x));
+    solution->base_rotation = CLAMP(base_raw, BASE_ROTATION_MIN, BASE_ROTATION_MAX);
+    if (solution->base_rotation != base_raw) {
+        ESP_LOGW(TAG, "[1] base CLAMPED %.2f -> %.2f° (limits %.0f..%.0f)",
+                 base_raw, solution->base_rotation,
+                 BASE_ROTATION_MIN, BASE_ROTATION_MAX);
+    } else {
+        ESP_LOGI(TAG, "[1] base_rotation=%.2f° (raw atan2 -> +90 offset)", solution->base_rotation);
+    }
 
-    // collapse into 2D problem in the arm plane
-    float r = sqrtf(x_plane * x_plane + y_plane * y_plane);
+    // [2] Rotate target into the arm's tilted vertical plane.
+    // plane_x = projected forward reach, plane_z = projected height (in arm plane)
+    float plane_x = r_horiz * cosf(base_tilt_rad) + target_z_offset * sinf(base_tilt_rad);
+    float plane_z = -r_horiz * sinf(base_tilt_rad) + target_z_offset * cosf(base_tilt_rad);
+    ESP_LOGI(TAG, "[2] tilted plane (gripper-tip target): plane_x=%.2f plane_z=%.2f", plane_x, plane_z);
 
-    float plane_x = r;
-    float plane_z = z_plane;
-
-    // the solver places the wrist, not the gripper tip, so subtract link3 first
-    // link3 goes forward LINK3_LENGTH and down LINK3_OFFSET in arm plane coords
+    // [3] Step back along link3 to find the *wrist* target.
+    // link3 extends LINK3_LENGTH forward and LINK3_OFFSET downward in the arm plane.
     plane_x -= ARM_LINK3_LENGTH;
     plane_z += ARM_LINK3_OFFSET;
+    ESP_LOGI(TAG, "[3] wrist target after link3 subtract: plane_x=%.2f plane_z=%.2f", plane_x, plane_z);
 
-    // reachability check using effective lengths
-    float dist = sqrtf(plane_x * plane_x + plane_z * plane_z);
-
+    // [4] Reachability — wrist must fall in the annulus between |L1-L2| and L1+L2.
+    float dist      = sqrtf(plane_x * plane_x + plane_z * plane_z);
     float max_reach = s_l1_eff + s_l2_eff;
     float min_reach = fabsf(s_l1_eff - s_l2_eff);
+    ESP_LOGI(TAG, "[4] wrist dist=%.2f, reachable range=[%.2f, %.2f]", dist, min_reach, max_reach);
 
     if (dist > max_reach || dist < min_reach) {
-        ESP_LOGW(TAG, "Target unreachable: wrist dist=%.2f, range=[%.2f, %.2f]",
+        ESP_LOGW(TAG, "[4] UNREACHABLE: dist=%.2f outside [%.2f, %.2f] — returning error",
                  dist, min_reach, max_reach);
         return ESP_ERR_INVALID_ARG;
     }
 
-    // law of cosines for elbow using effective link lengths
+    // [4a] Elbow: interior angle of (shoulder, elbow, wrist) triangle.
+    // FK convention: elbow_servo=180 → links collinear (extended), elbow_servo=0 → folded.
+    // The law-of-cosines interior angle equals the servo angle directly:
+    //   extended (dist=L1+L2) → cos=-1 → acos=180° ✓
+    //   folded  (dist=|L1-L2|) → cos=+1 → acos=0°   ✓
     float cos_elbow = (s_l1_eff * s_l1_eff + s_l2_eff * s_l2_eff - dist * dist) /
                       (2.0f * s_l1_eff * s_l2_eff);
-
     cos_elbow = CLAMP(cos_elbow, -1.0f, 1.0f);
+    float elbow_raw = RAD_TO_DEG(acosf(cos_elbow));
+    solution->elbow = CLAMP(elbow_raw, ELBOW_MIN, ELBOW_MAX);
+    if (solution->elbow != elbow_raw) {
+        ESP_LOGW(TAG, "[4a] elbow CLAMPED %.2f -> %.2f° (limits %.0f..%.0f, cos=%.3f)",
+                 elbow_raw, solution->elbow, ELBOW_MIN, ELBOW_MAX, cos_elbow);
+    } else {
+        ESP_LOGI(TAG, "[4a] elbow=%.2f° (cos=%.3f)", solution->elbow, cos_elbow);
+    }
 
-    solution->elbow = 180.0f - RAD_TO_DEG(acosf(cos_elbow));
-    solution->elbow = CLAMP(solution->elbow, ELBOW_MIN, ELBOW_MAX);
-
-    // shoulder angle
+    // [4b] Shoulder: angle to wrist target + angle inside the triangle at shoulder.
     float angle_to_target = atan2f(plane_z, plane_x);
-
     float cos_shoulder_internal = (s_l1_eff * s_l1_eff + dist * dist - s_l2_eff * s_l2_eff) /
                                   (2.0f * s_l1_eff * dist);
-
     cos_shoulder_internal = CLAMP(cos_shoulder_internal, -1.0f, 1.0f);
-
-    solution->shoulder = RAD_TO_DEG(angle_to_target + acosf(cos_shoulder_internal));
-    solution->shoulder = CLAMP(solution->shoulder, SHOULDER_MIN, SHOULDER_MAX);
+    float shoulder_raw = RAD_TO_DEG(angle_to_target + acosf(cos_shoulder_internal));
+    solution->shoulder = CLAMP(shoulder_raw, SHOULDER_MIN, SHOULDER_MAX);
+    if (solution->shoulder != shoulder_raw) {
+        ESP_LOGW(TAG, "[4b] shoulder CLAMPED %.2f -> %.2f° (limits %.0f..%.0f, "
+                      "angle_to_target=%.2f° internal=%.2f°)",
+                 shoulder_raw, solution->shoulder, SHOULDER_MIN, SHOULDER_MAX,
+                 RAD_TO_DEG(angle_to_target), RAD_TO_DEG(acosf(cos_shoulder_internal)));
+    } else {
+        ESP_LOGI(TAG, "[4b] shoulder=%.2f° (angle_to_target=%.2f°, internal=%.2f°)",
+                 solution->shoulder, RAD_TO_DEG(angle_to_target),
+                 RAD_TO_DEG(acosf(cos_shoulder_internal)));
+    }
 
     solution->valid = true;
-
-    ESP_LOGD(TAG, "IK: base=%.1f, shoulder=%.1f, elbow=%.1f",
+    ESP_LOGI(TAG, "[out] base=%.2f shoulder=%.2f elbow=%.2f",
              solution->base_rotation, solution->shoulder, solution->elbow);
-
     return ESP_OK;
 }
 
@@ -153,7 +200,8 @@ esp_err_t xIKForward(const ik_solution_t *solution, ik_target_t *position) {
         return ESP_ERR_INVALID_ARG;
     }
 
-    float base_rad = DEG_TO_RAD(solution->base_rotation);
+    // subtract 90 to convert servo frame (90=forward) back to math frame (0=forward)
+    float base_rad = DEG_TO_RAD(solution->base_rotation - 90.0f);
     float shoulder_rad = DEG_TO_RAD(solution->shoulder);
     float elbow_rad = DEG_TO_RAD(solution->elbow);
     float base_tilt_rad = DEG_TO_RAD(ARM_BASE_ANGLE);

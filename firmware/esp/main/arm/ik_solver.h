@@ -63,16 +63,32 @@
 /* Joint limits (degrees)                                                      */
 /* -------------------------------------------------------------------------- */
 
-#define BASE_ROTATION_MIN       50.0f
-#define BASE_ROTATION_MAX       130.0f
-#define SHOULDER_MIN            75.0f
-#define SHOULDER_MAX            150.0f
-#define ELBOW_MIN               55.0f
-#define ELBOW_MAX               125.0f
-#define WRIST_MIN               70.0f
-#define WRIST_MAX               110.0f
-#define GRIPPER_MIN             100.0f
-#define GRIPPER_MAX             140.0f
+// Joint limits — physical safety bounds. Tighter than the 0–180° servo travel to
+// prevent the IK from commanding mechanically-stressful or self-colliding poses.
+// Do NOT widen without verifying on hardware.
+// #define BASE_ROTATION_MIN       50.0f
+// #define BASE_ROTATION_MAX       130.0f
+// #define SHOULDER_MIN            75.0f
+// #define SHOULDER_MAX            150.0f
+// #define ELBOW_MIN               25.0f
+// #define ELBOW_MAX               165.0f
+// #define WRIST_MIN               70.0f
+// #define WRIST_MAX               110.0f
+// #define GRIPPER_MIN             100.0f
+// #define GRIPPER_MAX             140.0f
+
+// temporarily widen limits to allow more extreme poses while we test IK and debug arm geometry
+#define BASE_ROTATION_MIN       0.0f
+#define BASE_ROTATION_MAX       180.0f
+#define SHOULDER_MIN            0.0f
+#define SHOULDER_MAX            180.0f
+#define ELBOW_MIN               0.0f
+#define ELBOW_MAX               180.0f
+#define WRIST_MIN               0.0f
+#define WRIST_MAX               180.0f
+#define GRIPPER_MIN             0.0f
+#define GRIPPER_MAX             180.0f
+
 
 /* -------------------------------------------------------------------------- */
 /* Workspace limits                                                            */
@@ -93,13 +109,17 @@
 /* -------------------------------------------------------------------------- */
 
 // Forward (X) distance from arm origin to camera (mm).
-#define CAMERA_OFFSET_FORWARD_MM    0.0f
+// Must be retuned whenever BALL_STOP_TOF_MM or BALL_RADIUS_MM change:
+//   CAMERA_OFFSET_FORWARD_MM = 215 - (BALL_STOP_TOF_MM + BALL_RADIUS_MM)
+// Current: 215 - (200 + 20) = -5
+#define CAMERA_OFFSET_FORWARD_MM    -5.0f
 
 // Lateral (Y) distance from arm origin to camera — positive = left (mm).
 #define CAMERA_OFFSET_LATERAL_MM    0.0f
 
 // Vertical (Z) distance from arm origin to camera — positive = up (mm).
-#define CAMERA_OFFSET_VERTICAL_MM   0.0f
+// Decrease to lower the gripper, increase to raise it (~1mm per mm offset).
+#define CAMERA_OFFSET_VERTICAL_MM   120.0f
 
 /* -------------------------------------------------------------------------- */
 /* Types                                                                       */

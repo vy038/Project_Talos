@@ -72,10 +72,11 @@ TEST(ik_reachable_null) {
 }
 
 TEST(ik_forward_kinematics_known_angles) {
-    /* Test FK with known angles: both links at 90° shoulder, 180° elbow
-     * should point straight up. With base=0, both links are vertical. */
+    /* Both links at 90° shoulder, 180° elbow point straight up regardless of
+     * base direction (r_world = 0 when arm is vertical), so x/y ≈ 0 and
+     * z = link1 + link2. Use base=90 (servo center = forward). */
     ik_solution_t sol = {
-        .base_rotation = 0.0f,
+        .base_rotation = 90.0f,
         .shoulder = 90.0f,  /* straight up */
         .elbow = 180.0f,    /* fully extended (same direction as link1) */
         .valid = true,
@@ -84,38 +85,50 @@ TEST(ik_forward_kinematics_known_angles) {
     esp_err_t err = xIKForward(&sol, &pos);
     ASSERT_EQ(err, ESP_OK);
 
-    /* Both links pointing up: z = link1 + link2 = 180, x ≈ 0 */
+    /* Both links pointing up: z = link1 + link2 = 180, x ≈ 0, y ≈ 0 */
     ASSERT_NEAR(pos.x, 0.0, 1.0);
+    ASSERT_NEAR(pos.y, 0.0, 1.0);
     ASSERT_NEAR(pos.z, ARM_LINK1_LENGTH + ARM_LINK2_LENGTH, 1.0);
 }
 
 TEST(ik_solve_then_fk_consistency) {
-    /* Solve IK then FK. The FK result should be at the same distance
-     * from origin as the original target (within solver precision). */
-    ik_target_t target = {100, 0, 50};
-    ik_solution_t sol;
+    /* Strict IK->FK roundtrip: for an unclamped target, FK of the IK solution
+     * must reproduce the original target position to within a few mm. */
+    ik_target_t targets[] = {
+        {100,   0,  50},
+        { 80,  30,  40},
+        { 90, -25,  60},
+        {120,   0,  10},
+    };
 
-    esp_err_t err = xIKSolve(&target, &sol);
-    ASSERT_EQ(err, ESP_OK);
-    ASSERT_TRUE(sol.valid);
+    for (size_t i = 0; i < sizeof(targets)/sizeof(targets[0]); i++) {
+        ik_solution_t sol;
+        esp_err_t err = xIKSolve(&targets[i], &sol);
+        ASSERT_EQ(err, ESP_OK);
+        ASSERT_TRUE(sol.valid);
 
-    ik_target_t recovered;
-    err = xIKForward(&sol, &recovered);
-    ASSERT_EQ(err, ESP_OK);
+        /* Skip the strict roundtrip check if any joint hit its limit — the IK
+         * had to clamp and the target is unreachable in the literal sense. */
+        bool clamped = (sol.base_rotation <= BASE_ROTATION_MIN + 0.1f ||
+                        sol.base_rotation >= BASE_ROTATION_MAX - 0.1f ||
+                        sol.shoulder      <= SHOULDER_MIN      + 0.1f ||
+                        sol.shoulder      >= SHOULDER_MAX      - 0.1f ||
+                        sol.elbow         <= ELBOW_MIN         + 0.1f ||
+                        sol.elbow         >= ELBOW_MAX         - 0.1f);
+        if (clamped) continue;
 
-    /* FK should produce a valid point (not NaN/inf) at reasonable distance.
-     * Exact roundtrip precision is limited by joint angle clamping to
-     * [0,180] which loses information about the target direction. */
-    ASSERT_TRUE(isfinite(recovered.x));
-    ASSERT_TRUE(isfinite(recovered.y));
-    ASSERT_TRUE(isfinite(recovered.z));
-    float dist_recov = sqrtf(recovered.x*recovered.x + recovered.y*recovered.y + recovered.z*recovered.z);
-    ASSERT_TRUE(dist_recov > 0.0f);
-    ASSERT_TRUE(dist_recov <= MAX_REACH + 1.0f);
+        ik_target_t recovered;
+        err = xIKForward(&sol, &recovered);
+        ASSERT_EQ(err, ESP_OK);
+
+        ASSERT_NEAR(recovered.x, targets[i].x, 2.0);
+        ASSERT_NEAR(recovered.y, targets[i].y, 2.0);
+        ASSERT_NEAR(recovered.z, targets[i].z, 2.0);
+    }
 }
 
 TEST(ik_straight_ahead) {
-    /* Target straight ahead on X axis at half reach */
+    /* Target straight ahead on X axis: base_rotation should be 90° (servo center) */
     ik_target_t target = {90, 0, 0};
     ik_solution_t sol;
 
@@ -123,8 +136,20 @@ TEST(ik_straight_ahead) {
     ASSERT_EQ(err, ESP_OK);
     ASSERT_TRUE(sol.valid);
 
-    /* Base should be BASE_ROTATION_MIN (atan2(0,90) = 0, clamped to [50,130]) */
-    ASSERT_NEAR(sol.base_rotation, 50.0, 1.0);
+    ASSERT_NEAR(sol.base_rotation, 90.0, 1.0);
+}
+
+TEST(ik_base_rotation_direction) {
+    /* Ball left (y > 0): base_rotation > 90. Ball right (y < 0): base_rotation < 90. */
+    ik_target_t left  = {80,  40, 0};
+    ik_target_t right = {80, -40, 0};
+    ik_solution_t sol;
+
+    ASSERT_EQ(xIKSolve(&left, &sol), ESP_OK);
+    ASSERT_TRUE(sol.base_rotation > 90.0f);
+
+    ASSERT_EQ(xIKSolve(&right, &sol), ESP_OK);
+    ASSERT_TRUE(sol.base_rotation < 90.0f);
 }
 
 TEST(ik_solve_unreachable_returns_error) {
@@ -174,6 +199,7 @@ int main(void) {
     RUN_TEST(ik_forward_kinematics_known_angles);
     RUN_TEST(ik_solve_then_fk_consistency);
     RUN_TEST(ik_straight_ahead);
+    RUN_TEST(ik_base_rotation_direction);
     RUN_TEST(ik_solve_unreachable_returns_error);
     RUN_TEST(ik_various_quadrants);
 

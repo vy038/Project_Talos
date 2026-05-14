@@ -38,9 +38,16 @@
 // if ball center is within this many px of frame center, consider it "centered"
 #define BALL_CENTER_TOLERANCE_X     25
 
-// VL53L0X distance (mm) at which robot is close enough to attempt grab
-// TODO: calibrate by positioning ball at grab distance and reading ToF
+// VL53L0X distance (mm) at which robot is close enough to attempt grab.
+// This is the distance to the FRONT SURFACE of the ball (real VL53L0X and
+// corrected sim both report front-surface distance). At ~100mm front-surface,
+// the ball center is ~120mm away — the sweet spot for the IK workspace.
 #define BALL_STOP_TOF_MM            200
+
+// Physical radius of the ball being grabbed (mm). The VL53L0X reports distance
+// to the ball's front surface; adding this gives the ball center distance,
+// which is what the IK should target so the gripper reaches around the ball.
+#define BALL_RADIUS_MM              20.0f
 
 // reference max TOF distance for approach speed scaling (mm)
 #define BALL_APPROACH_FAR_MM        800
@@ -55,12 +62,12 @@
 // walk speed when TOF has no reading (no beam hit yet) — approach cautiously
 #define APPROACH_BLIND_SPEED        0.15f
 
-// approximate camera horizontal FOV (degrees) — OV2640 QVGA ≈ 62°
-#define CAM_HFOV_DEG                62.0f
+// camera horizontal FOV (degrees) — matches sim (viewer3d.js) and espcam fPixelToAngle()
+#define CAM_HFOV_DEG                60.0f
 
-// approximate camera vertical FOV (degrees) — OV2640 QVGA ≈ 46.5°
+// camera vertical FOV (degrees) — derived: 2*atan(tan(30°) * 240/320) ≈ 46.8°
 // TODO: calibrate empirically
-#define CAM_VFOV_DEG                46.5f
+#define CAM_VFOV_DEG                46.8f
 
 // factor on the pixel→angle conversion for grab prep base rotation (fallback only)
 // >1 over-rotates slightly to make up for camera-arm lateral offset at close ranges

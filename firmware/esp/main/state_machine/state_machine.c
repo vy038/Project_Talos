@@ -19,6 +19,15 @@ static detection_result_t last_detection = {0};
 static bool grab_prep_arm_sent = false;
 static uint16_t s_prev_tof_mm = 0;            // last valid TOF reading during approach, for spike detection
 
+// IK result saved during GRAB_PREP so it can be printed after the grab completes TODO: REMOVE AFTER TROUBLESHOOTING
+static struct {
+    float base, shoulder, elbow;
+    float tof_mm;
+    bool  ik_used;      // true = IK angles, false = scoop fallback
+    bool  populated;
+} s_last_ik_result = {0};
+
+
 // get time spent in state
 static uint32_t ms_in_state(void) {
     return (uint32_t)((esp_timer_get_time() - state_enter_time) / 1000);
@@ -159,8 +168,8 @@ static void handle_approach(void) {
     float walk_speed = APPROACH_BLIND_SPEED;
     if (last_detection.tof_dist_mm > 0 && last_detection.tof_dist_mm < BALL_APPROACH_FAR_MM) {
         float proximity = 1.0f - (float)last_detection.tof_dist_mm / (float)BALL_APPROACH_FAR_MM;
-        walk_speed = 0.3f - (0.15f * proximity);  // 0.3 far, 0.15 close
-        if (walk_speed < 0.1f) walk_speed = 0.1f; // safeguard
+        walk_speed = 0.5f - (0.2f * proximity);   // 0.5 far, 0.3 close
+        if (walk_speed < 0.2f) walk_speed = 0.2f; // safeguard
     }
 
     vGaitSetCommand(MOVE_FORWARD, walk_speed);
@@ -224,17 +233,19 @@ static void handle_grab_prep(void) {
 
     // move arm to proper grab position (after stabilized)
     if (!grab_prep_arm_sent) {
-        float dist_mm = (last_detection.tof_dist_mm > 0)
+        // TOF reports front-surface distance, add ball radius to get the center
+        float dist_mm = ((last_detection.tof_dist_mm > 0)
                         ? (float)last_detection.tof_dist_mm
-                        : (float)BALL_STOP_TOF_MM;
+                        : (float)BALL_STOP_TOF_MM)
+                        + BALL_RADIUS_MM;
 
-        // project pixel offsets to angles; ball_x right = negative y (y-axis is left)
+        // pixel offsets to angles: ball_x right = negative y (y is left)
         float px_h = (float)last_detection.ball_x - (CAM_FRAME_WIDTH  / 2.0f);
         float px_v = (CAM_FRAME_HEIGHT / 2.0f)    - (float)last_detection.ball_y;
         float ah   = px_h / (float)CAM_FRAME_WIDTH  * CAM_HFOV_DEG * (float)(M_PI / 180.0);
         float av   = px_v / (float)CAM_FRAME_HEIGHT * CAM_VFOV_DEG * (float)(M_PI / 180.0);
 
-        // reconstruct 3D position in camera frame (x=forward, y=left, z=up)
+        // reconstruct 3D ball position in camera frame (x=forward, y=left, z=up)
         float r_h = dist_mm * cosf(av);
         ik_target_t cam_pos = {
             .x =  r_h * cosf(ah),
@@ -249,20 +260,40 @@ static void handle_grab_prep(void) {
         arm_angles_t grab = arm_grab_ready;
 
         if (xIKSolve(&arm_pos, &sol) == ESP_OK && sol.valid) {
-            grab.base     = sol.base_rotation;
-            grab.shoulder = sol.shoulder;
-            grab.elbow    = sol.elbow;
-            ESP_LOGI(TAG, "IK grab: base=%.1f shoulder=%.1f elbow=%.1f (dist=%.0fmm)",
-                     grab.base, grab.shoulder, grab.elbow, dist_mm);
+            // Shoulder clamping detection: if the raw IK angle was negative (target
+            // genuinely below the arm's reach) the solver clamps it near zero.
+            // Values < 10° indicate the IK was computing a negative angle, indicating
+            // the arm geometry doesn't match that target. Use the calibrated scoop pose
+            // instead, but keep IK's base rotation which is always valid.
+            bool shoulder_floored = (sol.shoulder < 10.0f);
+
+            grab.base = sol.base_rotation;
+            if (!shoulder_floored) {
+                grab.shoulder = sol.shoulder;
+                grab.elbow    = sol.elbow;
+            }
+            // grab.shoulder/elbow/gripper stay at arm_grab_ready when floored
+
+            s_last_ik_result.base     = grab.base;
+            s_last_ik_result.shoulder = grab.shoulder;
+            s_last_ik_result.elbow    = grab.elbow;
+            s_last_ik_result.tof_mm   = dist_mm;
+            s_last_ik_result.ik_used  = !shoulder_floored;
+            s_last_ik_result.populated = true;
         } else {
-            // IK unreachable — fall back to fixed preset with pixel-offset base only
+            // IK unreachable, fall back to calibrated scoop pose with pixel-offset base
             float center_offset = (float)last_detection.ball_x - (CAM_FRAME_WIDTH / 2.0f);
             float angle_offset  = center_offset * (CAM_HFOV_DEG / (float)CAM_FRAME_WIDTH) * BASE_ANGLE_SCALE;
             grab.base = 90.0f - angle_offset;
             if (grab.base < BASE_ROTATION_MIN) grab.base = BASE_ROTATION_MIN;
             if (grab.base > BASE_ROTATION_MAX) grab.base = BASE_ROTATION_MAX;
-            ESP_LOGW(TAG, "IK unreachable, using preset (base=%.1f, dist=%.0fmm)",
-                     grab.base, dist_mm);
+
+            s_last_ik_result.base      = grab.base;
+            s_last_ik_result.shoulder  = grab.shoulder;
+            s_last_ik_result.elbow     = grab.elbow;
+            s_last_ik_result.tof_mm    = dist_mm;
+            s_last_ik_result.ik_used   = false;
+            s_last_ik_result.populated = true;
         }
 
         xArmSetAngles(&grab);
@@ -289,6 +320,18 @@ static void handle_grab(void) {
     // wait until gripper reaches target, transition once closed or after timeout
     // (ARM_STEP_DEG = 1/20ms = 50 deg/sec, 170 deg travel takes ~3.4s)
     if (bArmAtTarget()) {
+        if (s_last_ik_result.populated) {
+            if (s_last_ik_result.ik_used) {
+                ESP_LOGI(TAG, "GRAB OK: IK solution: base=%.1f shoulder=%.1f elbow=%.1f (tof=%.0fmm)",
+                         s_last_ik_result.base, s_last_ik_result.shoulder,
+                         s_last_ik_result.elbow, s_last_ik_result.tof_mm);
+            } else {
+                ESP_LOGI(TAG, "GRAB OK: scoop fallback: base=%.1f shoulder=%.1f elbow=%.1f (tof=%.0fmm) "
+                              "[IK shoulder was at safety limit]",
+                         s_last_ik_result.base, s_last_ik_result.shoulder,
+                         s_last_ik_result.elbow, s_last_ik_result.tof_mm);
+            }
+        }
         transition(STATE_LIFT);
         return;
     }

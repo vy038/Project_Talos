@@ -426,12 +426,14 @@ function simulateCameraDetection(ballPos) {
     const distMm = distSim * SIM_MM_PER_PX;
 
     // VL53L0X ToF — simplified: beam hits when ball is within the center column of
-    // the frame (horizontal offset < TOF_HIT_PX). This avoids ray/sphere geometry
-    // issues from 3D positioning offsets. When the ball drifts off-axis the TOF reads
-    // 2000mm, triggering the spike-detection realign in state_machine.c.
+    // the frame (horizontal offset < TOF_HIT_PX). Reports distance to the FRONT
+    // surface of the ball (center distance minus ball radius), matching real
+    // VL53L0X behaviour where the laser reflects off the nearest surface.
     const TOF_HIT_PX = 30;
     const tofHit = Math.abs(cx - CAM_W / 2) < TOF_HIT_PX;
-    const tofDistMm = tofHit ? Math.round(Math.min(2000, Math.max(20, distMm))) : 2000;
+    const tofDistMm = tofHit
+        ? Math.round(Math.min(2000, Math.max(20, distMm - BALL_REAL_RADIUS_MM)))
+        : 2000;
 
     // Update beam length (sim units)
     const tofDistSim = tofDistMm / SIM_MM_PER_PX;
