@@ -28,9 +28,9 @@ void test_i2c_scan(uint8_t scl, uint8_t sda) {
         .mode = I2C_MODE_MASTER,
         .sda_io_num = sda,
         .scl_io_num = scl,
-        .sda_pullup_en = false,  // Disable internal; use external 4.7k resistors
+        .sda_pullup_en = false,  // External 4.7k pull-ups on SDA/SCL
         .scl_pullup_en = false,
-        .master.clk_speed = 100000,  // Standard I2C speed (was 10kHz, that was the problem!)
+        .master.clk_speed = 100000,
     };
 
     printf("Installing I2C driver on port 0...\n");

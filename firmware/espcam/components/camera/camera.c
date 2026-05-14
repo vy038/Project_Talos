@@ -39,14 +39,14 @@ esp_err_t xCameraInit(void) {
         .pin_vsync = CAM_PIN_VSYNC,
         .pin_href = CAM_PIN_HREF,
         .pin_pclk = CAM_PIN_PCLK,
-        .xclk_freq_hz = 20000000,
+        .xclk_freq_hz = 10000000,  // reduced from 20MHz for long cable robustness
         .ledc_timer = LEDC_TIMER_0,
         .ledc_channel = LEDC_CHANNEL_0,
         .pixel_format = PIXFORMAT_RGB565,
         .frame_size = FRAMESIZE_QVGA,
         .jpeg_quality = 12,
-        .fb_count = 1,
-        .grab_mode = CAMERA_GRAB_WHEN_EMPTY
+        .fb_count = 2,  // increased from 1 for better buffering
+        .grab_mode = CAMERA_GRAB_LATEST  // grab latest frame, more forgiving on timeouts
     };
     
     esp_err_t err = esp_camera_init(&config);

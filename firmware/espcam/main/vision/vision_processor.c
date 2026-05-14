@@ -17,7 +17,7 @@ static const char *TAG = "VISION";
 // VL53L0X TOF sensor I2C pins and config
 #define TOF_I2C_PORT    I2C_NUM_0
 #define TOF_SCL_PIN     41
-#define TOF_SDA_PIN     40
+#define TOF_SDA_PIN     42
 #define TOF_ADDRESS     0x29
 #define TOF_TIMEOUT_MS  500
 

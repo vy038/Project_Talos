@@ -55,11 +55,14 @@
 // walk speed when TOF has no reading (no beam hit yet) — approach cautiously
 #define APPROACH_BLIND_SPEED        0.15f
 
-// approximate camera horizontal FOV (degrees), used to convert ball_x pixel offset to arm base rotation angle during grab prep
-// OV2640 QVGA ≈ 62 degrees
+// approximate camera horizontal FOV (degrees) — OV2640 QVGA ≈ 62°
 #define CAM_HFOV_DEG                62.0f
 
-// factor on the pixel→angle conversion for grab prep base rotation
+// approximate camera vertical FOV (degrees) — OV2640 QVGA ≈ 46.5°
+// TODO: calibrate empirically
+#define CAM_VFOV_DEG                46.5f
+
+// factor on the pixel→angle conversion for grab prep base rotation (fallback only)
 // >1 over-rotates slightly to make up for camera-arm lateral offset at close ranges
 // TODO: calibrate empirically
 #define BASE_ANGLE_SCALE            1.1f

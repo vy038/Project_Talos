@@ -635,9 +635,9 @@ vl53l0x_config (int8_t port, int8_t scl, int8_t sda, int8_t xshut, uint8_t addre
       .mode = I2C_MODE_MASTER,
       .sda_io_num = sda,
       .scl_io_num = scl,
-      .sda_pullup_en = true,
-      .scl_pullup_en = true,
-      .master.clk_speed = 10000,
+      .sda_pullup_en = false,  // External 4.7k pull-ups on SDA/SCL
+      .scl_pullup_en = false,
+      .master.clk_speed = 100000,
    };
    esp_err_t cfg_ret = i2c_param_config (port, &config);
    if (cfg_ret)
@@ -646,7 +646,7 @@ vl53l0x_config (int8_t port, int8_t scl, int8_t sda, int8_t xshut, uint8_t addre
       if (!install_ret) i2c_driver_delete (port);   // only delete if we installed it
       return NULL;
    }
-   i2c_set_timeout (port, 20);          // Clock stretching (ESP32-S3: 2^20 APB cycles ~= 13ms)
+   i2c_set_timeout (port, 20);          // 2^20 APB cycles ~= 13ms
    i2c_filter_enable (port, 5);
    if (xshut >= 0)
    {

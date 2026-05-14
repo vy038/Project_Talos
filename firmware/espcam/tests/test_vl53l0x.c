@@ -29,11 +29,9 @@ void test_vl53l0x(uint8_t scl, uint8_t sda) {
     printf("  Note: Using internal ESP32 I2C pull-ups\n");
     printf("========================================\n\n");
 
-    // Enable internal pull-ups on I2C pins (don't install driver — vl53l0x will do it)
-    printf("Enabling GPIO pull-ups on SCL/SDA...\n");
-    gpio_set_pull_mode(scl, GPIO_PULLUP_ONLY);
-    gpio_set_pull_mode(sda, GPIO_PULLUP_ONLY);
-    printf("Pull-ups enabled\n\n");
+    // External 4.7k pull-ups on SDA/SCL — disable internal ones
+    gpio_set_pull_mode(scl, GPIO_FLOATING);
+    gpio_set_pull_mode(sda, GPIO_FLOATING);
 
     // Configure: (port, scl, sda, xshut, address, io_2v8)
     printf("Initializing VL53L0X...\n");
@@ -42,6 +40,9 @@ void test_vl53l0x(uint8_t scl, uint8_t sda) {
         printf("ERROR: vl53l0x_config failed\n");
         return;
     }
+
+    // Set generous timeout before init — SPAD calibration needs more than the 100ms default
+    vl53l0x_setTimeout(dev, 500);
 
     const char *err = vl53l0x_init(dev);
     if (err) {

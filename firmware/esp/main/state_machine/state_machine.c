@@ -9,6 +9,7 @@
 #include "esp_timer.h"
 #include <string.h>
 #include <stdlib.h>
+#include <math.h>
 
 static const char *TAG = "STATE";
 
@@ -108,8 +109,8 @@ static void handle_search(void) {
 
 static void handle_align(void) {
     // use tripod for coarse correction (avoids mid-stride gait switch from searching, causing janky leg movement)
-    int coarse_offset = (int)last_detection.ball_x - (CAM_FRAME_WIDTH / 2);
-    if (abs(coarse_offset) > ALIGN_COARSE_THRESHOLD_X) {
+    int center_offset = (int)last_detection.ball_x - (CAM_FRAME_WIDTH / 2);
+    if (abs(center_offset) > ALIGN_COARSE_THRESHOLD_X) {
         vGaitSetType(GAIT_TRIPOD);
     } else { // switch to wave only for fine alignment when nearly centred
         vGaitSetType(GAIT_WAVE);
@@ -161,7 +162,7 @@ static void handle_approach(void) {
     if (last_detection.tof_dist_mm > 0 && last_detection.tof_dist_mm < BALL_APPROACH_FAR_MM) {
         float proximity = 1.0f - (float)last_detection.tof_dist_mm / (float)BALL_APPROACH_FAR_MM;
         walk_speed = 0.3f - (0.15f * proximity);  // 0.3 far, 0.15 close
-        if (walk_speed < 0.1f) walk_speed = 0.1f;
+        if (walk_speed < 0.1f) walk_speed = 0.1f; // safeguard
     }
 
     vGaitSetCommand(MOVE_FORWARD, walk_speed);
@@ -225,21 +226,47 @@ static void handle_grab_prep(void) {
 
     // move arm to proper grab position (after stabilized)
     if (!grab_prep_arm_sent) {
-        // compute base rotation from last known ball sideways offset
-        // center_offset > 0 = right so base < 90, center_offset < 0 = left so base > 90
-        float center_offset = (float)last_detection.ball_x - (CAM_FRAME_WIDTH / 2.0f);
-        float angle_offset  = center_offset * (CAM_HFOV_DEG / (float)CAM_FRAME_WIDTH) * BASE_ANGLE_SCALE;
-        float base_angle    = 90.0f - angle_offset;
+        float dist_mm = (last_detection.tof_dist_mm > 0)
+                        ? (float)last_detection.tof_dist_mm
+                        : (float)BALL_STOP_TOF_MM;
 
-        // clamp to min and max
-        if (base_angle < BASE_ROTATION_MIN) base_angle = BASE_ROTATION_MIN;
-        if (base_angle > BASE_ROTATION_MAX) base_angle = BASE_ROTATION_MAX;
+        // project pixel offsets to angles; ball_x right = negative y (y-axis is left)
+        float px_h = (float)last_detection.ball_x - (CAM_FRAME_WIDTH  / 2.0f);
+        float px_v = (CAM_FRAME_HEIGHT / 2.0f)    - (float)last_detection.ball_y;
+        float ah   = px_h / (float)CAM_FRAME_WIDTH  * CAM_HFOV_DEG * (float)(M_PI / 180.0);
+        float av   = px_v / (float)CAM_FRAME_HEIGHT * CAM_VFOV_DEG * (float)(M_PI / 180.0);
 
-        // send commands to arm to ensure servos are in ready grab pos
+        // reconstruct 3D position in camera frame (x=forward, y=left, z=up)
+        float r_h = dist_mm * cosf(av);
+        ik_target_t cam_pos = {
+            .x =  r_h * cosf(ah),
+            .y = -r_h * sinf(ah),
+            .z =  dist_mm * sinf(av),
+        };
+
+        ik_target_t arm_pos;
+        xIKCameraToArm(&cam_pos, &arm_pos);
+
+        ik_solution_t sol;
         arm_angles_t grab = arm_grab_ready;
-        grab.base = base_angle;
-        ESP_LOGI(TAG, "Moving arm to grab position (base=%.1f, px_offset=%.0f)",
-                 base_angle, center_offset);
+
+        if (xIKSolve(&arm_pos, &sol) == ESP_OK && sol.valid) {
+            grab.base     = sol.base_rotation;
+            grab.shoulder = sol.shoulder;
+            grab.elbow    = sol.elbow;
+            ESP_LOGI(TAG, "IK grab: base=%.1f shoulder=%.1f elbow=%.1f (dist=%.0fmm)",
+                     grab.base, grab.shoulder, grab.elbow, dist_mm);
+        } else {
+            // IK unreachable — fall back to fixed preset with pixel-offset base only
+            float center_offset = (float)last_detection.ball_x - (CAM_FRAME_WIDTH / 2.0f);
+            float angle_offset  = center_offset * (CAM_HFOV_DEG / (float)CAM_FRAME_WIDTH) * BASE_ANGLE_SCALE;
+            grab.base = 90.0f - angle_offset;
+            if (grab.base < BASE_ROTATION_MIN) grab.base = BASE_ROTATION_MIN;
+            if (grab.base > BASE_ROTATION_MAX) grab.base = BASE_ROTATION_MAX;
+            ESP_LOGW(TAG, "IK unreachable, using preset (base=%.1f, dist=%.0fmm)",
+                     grab.base, dist_mm);
+        }
+
         xArmSetAngles(&grab);
         grab_prep_arm_sent = true;
     }

@@ -52,7 +52,7 @@ void test_gpio(void);
 
 // TOF sensor pins (matches vision_processor.c)
 #define TESTS_TOF_SCL   41
-#define TESTS_TOF_SDA   40
+#define TESTS_TOF_SDA   42
 
 static inline void run_test(void) {
     printf("\n========================================\n");
