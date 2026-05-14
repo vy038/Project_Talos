@@ -131,8 +131,6 @@ static void handle_align(void) {
         return;
     }
 
-    int center_offset = (int)last_detection.ball_x - (CAM_FRAME_WIDTH / 2);
-
     if (abs(center_offset) < BALL_CENTER_TOLERANCE_X) {
         vGaitSetCommand(MOVE_STOP, 0);
         transition(STATE_APPROACH);
