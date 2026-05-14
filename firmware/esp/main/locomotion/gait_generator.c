@@ -96,29 +96,42 @@ static void compute_leg(float leg_phase, float duty, float stride,
                         float direction, int8_t hip_dir,
                         float *out_hip, float *out_knee) {
 
+    // leg phase is the master_gait + leg_offsets of trig function
+
     // compute leg angles based on phase in step cycle
     // swing = foot in air, moves forward. stance = foot on ground, pushes body.
     // cosine easing: smooth_t goes 0→1 with soft acceleration/deceleration
-    if (leg_phase < duty) {
+
+    if (leg_phase < duty) { // if leg is in swing phase (0.0 - 0.5 in cycle)
+        // get percentage of swing completed (0.0 - 1.0)
         float swing_progress = leg_phase / duty;
+
+        // smooth it out with cosine mapping
         float smooth_t = 0.5f * (1.0f - cosf(swing_progress * M_PI));
+
+
         float hip_offset = (-stride / 2.0f) + (stride * smooth_t);
         *out_hip = HIP_NEUTRAL_DEG + (hip_offset * direction * hip_dir);
 
         // smooth knee lift: cosine ramp up 25%, hold 50%, cosine ramp down 25%
         float lift;
-        if (swing_progress < 0.25f) {
-            float t = swing_progress / 0.25f;
-            lift = 0.5f * (1.0f - cosf(t * M_PI)) * KNEE_LIFT_DEG;
-        } else if (swing_progress < 0.75f) {
+        if (swing_progress < 0.25f) { // lifting up
+            float t = swing_progress / 0.25f; // take relative to the lift phase
+            lift = 0.5f * (1.0f - cosf(t * M_PI)) * KNEE_LIFT_DEG; // map cosine to 0→1 and scale by max lift
+        } else if (swing_progress < 0.75f) { // in the middle of the swing, hold max lift
             lift = KNEE_LIFT_DEG;
-        } else {
+        } else { // moving down
             float t = (swing_progress - 0.75f) / 0.25f;
             lift = 0.5f * (1.0f + cosf(t * M_PI)) * KNEE_LIFT_DEG;
         }
         *out_knee = KNEE_NEUTRAL_DEG - lift;
+
+
     } else {
-        float stance_progress = (leg_phase - duty) / (1.0f - duty);
+        // get progress from 0-1
+        float stance_progress = (leg_phase - duty) / (1.0f - duty); 
+
+
         float smooth_t = 0.5f * (1.0f - cosf(stance_progress * M_PI));
         float hip_offset = (stride / 2.0f) - (stride * smooth_t);
         *out_hip = HIP_NEUTRAL_DEG + (hip_offset * direction * hip_dir);
@@ -196,12 +209,13 @@ void vGaitSetCommand(move_command_t cmd, float speed) {
 }
 
 void vGaitSetType(gait_type_t type) {
-    // change gait walking type — do NOT reset master_phase so legs finish their
-    // current step rather than teleporting back to phase-0 position
+    if (current_gait == type) return;  // Already in this gait
+
+    // change gait walking type, do NOT reset master_phase so legs finish their current step, doesn't teleport back to phase-0 position
     current_gait = type;
     switch (type) {
-        case GAIT_TRIPOD: active_offsets = tripod_offsets; break;
-        case GAIT_WAVE:   active_offsets = wave_offsets;   break;
+        case GAIT_TRIPOD: active_offsets = tripod_offsets;  break;
+        case GAIT_WAVE:   active_offsets = wave_offsets;    break;
         case GAIT_RIPPLE: active_offsets = ripple_offsets;  break;
     }
     ESP_LOGI(TAG, "Gait changed to %d (phase=%.2f)", type, master_phase);

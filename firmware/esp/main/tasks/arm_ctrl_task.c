@@ -2,8 +2,12 @@
 #include "arm_ctrl_task.h"
 #include "task_config.h"
 #include "arm/arm_control.h"
+#include "arm/ik_solver.h"
 
 void vArmCtrlTask(void *pvParams) {
+    // init ik solver
+    xIKSolverInit();
+
     // initialize arm control
     xArmControlInit();
 
