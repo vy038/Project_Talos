@@ -3,7 +3,7 @@
 ![C](https://img.shields.io/badge/C-bare_metal-555?style=flat-square&logo=c&logoColor=white)
 ![FreeRTOS](https://img.shields.io/badge/FreeRTOS-6_tasks-555?style=flat-square)
 ![ESP32](https://img.shields.io/badge/ESP32-dual_MCU-555?style=flat-square)
-![Status](https://img.shields.io/badge/status-WIP-orange?style=flat-square)
+![Status](https://img.shields.io/badge/status-active-green?style=flat-square)
 
 Scorpion-style hexapod with a 3-DOF arm and computer vision. Wanted to build something that required real-time control, inverse kinematics, and vision processing on embedded hardware. Runs on dual ESP32s (WROOM for motors, S3 for camera) with bare metal C and FreeRTOS.
 
@@ -15,13 +15,14 @@ Scorpion-style hexapod with a 3-DOF arm and computer vision. Wanted to build som
 
 ## Status
 
-- Arm kinematics (tested, working)
-- Walking gait (tested, working)
-- Simulator is demoable (tripod/wave/ripple, arm IK, physics ball)
-- Full RTOS architecture
-- Some sensors (MPU6050, ACS712, ToF) not wired up yet
-- Waiting on new ToF Sensor
-- End-to-end autonomous demo (end goal)
+Core functionality complete. Sensors and refinements ongoing.
+
+- ✅ Walking gait (tripod/wave/ripple, tested on hardware)
+- ✅ Arm kinematics (IK solver, tested on hardware)
+- ✅ Simulator (real firmware C + HAL stubs, Three.js frontend)
+- ✅ Full RTOS architecture (6 tasks, queues, mutexes, semaphores)
+- ✅ End-to-end autonomous ball retrieval (confirmed on hardware)
+- 🔧 Sensor integration (MPU6050, ACS712, ToF have their firmware ready, but is not yet wired)
 
 ---
 
@@ -80,8 +81,8 @@ I used FreeRTOS because concurrent tasks let everything run in real time. Instea
 
 **Shared IPC** - `task_config.h`
 ```c
-QueueHandle_t     xCamFrameQueue;      // depth=1, stale frames are worse than no frames
-QueueHandle_t     xPowerEventQueue;    // depth=4
+QueueHandle_t     xFrameQueue;         // depth=1, stale frames are worse than no frames
+QueueHandle_t     xPowerQueue;         // depth=4
 SemaphoreHandle_t xArmSemaphore;       // binary, arm wakes only when state machine signals
 SemaphoreHandle_t xI2CMutex;           // binary, guards PCA9685 bus
 TaskHandle_t      xUartCamTaskHandle;  // direct notify via cam ping
@@ -100,7 +101,7 @@ TaskHandle_t      xUartCamTaskHandle;  // direct notify via cam ping
 
 **Balance** `P5 · 20ms` - can be enabled or disabled depending on whether the MPU6050 is detected at startup. It has the same priority as gait (5) and runs on the same 20ms cycle. It reads the MPU6050 and runs a complementary filter with gyro and accel to get pitch and roll, then computes per-leg knee corrections based on the tilt. Gait pulls those corrections directly on its next update, writing to its own internal struct and gait reads it. Some tolerance is built in so small tilts don't cause constant micro-adjustments.
 
-**Arm** `P6` - needs a semaphore to be given from the state machine, where the task will then wake and take ball positioning info from the state machine, where it will then convert the coordinates relative to the arm, then process how to move the arm with IK. Because it has priority 6, it will have highest priority, and it will keep updating the arm to slowly move closer to target. Once target is reached, it will grab. Camera should also keep monitoring the ball and sending updated coordinates to the arm, where it will continuously update the IK of the arm and slowly move to the desired position. Requires I2C bus mutex in order to send commands.
+**Arm** `P6` - gates on a binary semaphore released by the state machine when it enters GRAB_PREP. Once awake, it runs `xArmUpdate()` every cycle, which incrementally steps each joint toward the target angles at a fixed rate (0.5°/step for shoulder/elbow/base, 4°/step for the gripper). The state machine is the one that decides what the target angles should be, as it is the one that runs IK solve, picks the pose, and calls `xArmSetAngles()`. The arm task just executes the motion. Requires I2C bus mutex in order to send commands.
 
 **Power monitor** `P1 · 20ms` - runs in the background every 20ms at priority 1. It reads the ACS712 current sensor and uses a consecutive-count filter. To prevent false positives, it needs 2-3 high readings in a row before flagging a problem, which filters out normal servo inrush spikes that can read way above normal for a short burst on startup. When it does detect a real issue, it escalates its own priority up to the max so it can immediately post the emergency status to the queue without waiting behind any other task. The state machine picks it up at the top of its next 50ms cycle and transitions to EMERGENCY.
 
@@ -111,43 +112,43 @@ TaskHandle_t      xUartCamTaskHandle;  // direct notify via cam ping
 ## Logic Flow
 
 ```
-BOOT -> IDLE -> SEARCH -> ALIGN -> APPROACH -> GRAB -> DONE
-                   ^         ^        |
-                   |         +--------+ (TOF spike or drift)
-                   |
-              EMERGENCY (any state, power fault)
+BOOT -> CALIBRATE -> IDLE -> SEARCH -> ALIGN -> APPROACH -> GRAB_PREP -> GRAB -> LIFT -> DONE
+                                 ^        ^         |
+                                 |        +---------+ (TOF spike or drift)
+                                 |
+                            EMERGENCY (any state, power fault)
 ```
 
 
 ![State Flowchart](state_flowchart.png)
 
 
-Robot boots up, the hardware is all initialized in main, and then all tasks are launched.
+Robot boots up, hardware is initialized in main, and all tasks are launched.
 
-The state machine is where it starts, and initializes everything else in the tasks, calibrates balancing and others, then idles for a bit before entering search mode.
+The state machine starts in CALIBRATE, holding still for MPU6050 calibration and balance init (MPU6050 currently not wired up), then idles briefly before entering search mode.
 
-Once the frame is processed, it will enter searching mode, where the robot will try to find the ball by turning 360.
+Once in SEARCH, the robot turns slowly looking for the ball. When detected, it transitions to ALIGN if the ball is off-center, or straight to APPROACH if already centered. During alignment, the camera is used purely for centering: the pixel radius of the blob sets the turn speed (bigger blob = ball is close = slower turns for precision), but no distance math from the camera is used since that estimate fluctuates too much in practice.
 
-Gait is used heavily for all walking, and it has auto balance too to make sure the robot is always oriented upwards properly.
+Once centered, the robot switches to APPROACH and walks toward the ball. Speed is controlled by the VL53L0X TOF reading, the only accurate distance source. If TOF isn't hitting the ball yet, it creeps forward slowly until it does. If the TOF reading suddenly spikes (ball left the sensor beam), it transitions back to ALIGN to re-center and re-acquire. The camera also watches for large centering drift and kicks back to ALIGN if needed.
 
-Once ball is located, it will transition to aligning, then approaching. During alignment, the camera is used purely for centering: the pixel radius of the blob sets the turn speed (bigger blob means the ball is close, so it turns slower for precision), but no distance math from the camera is used at all since that estimate fluctuates too much in practice.
+Once close enough, the robot stops and transitions to GRAB_PREP. The arm semaphore is released, waking the arm task. The state machine runs an IK solve using the TOF distance and camera pixel position to compute the grab pose, then commands the arm to that position. It waits for the arm to reach the target before continuing.
 
-Once centered, the robot switches to approach mode and walks toward the ball. Speed is controlled by the VL53L0X TOF reading, which is the only accurate distance source. If TOF isn't hitting the ball yet, it creeps forward slowly until it does. If the TOF reading suddenly spikes (meaning the ball has left the sensor beam), it transitions back to align to use the camera for micro adjustments to re-center and re-acquire. Camera is also still watching to catch large centering drift and kick back to align if needed.
+In GRAB, the gripper closes. Once closed (confirmed by all joints reaching target), it transitions to LIFT.
 
-Once it's close enough, the robot stops and transitions to grab phase where the arm takes over.
+In LIFT, the arm raises the shoulder back to neutral while keeping the gripper closed, then transitions to DONE.
 
-Arm grabs, lifts, and holds. Program is done, robot stays in DONE state.
+DONE: robot holds position. Mission complete.
 
-There is also power monitoring at all times to halt the robot when it detects sustained overcurrent (multiple consecutive bad readings, not just a spike).
+Power monitoring runs at all times in the background and triggers EMERGENCY on sustained overcurrent (multiple consecutive bad readings, filtering out normal servo inrush spikes).
 
 ---
 
 ## Goals
 
-- 50Hz locomotion control
-- <5ms IK solve time
-- 10Hz vision processing
-- Autonomous ball retrieval
+- 50Hz locomotion control (Met)
+- <5ms IK solve time (Met)
+- 10Hz vision processing (Met)
+- Autonomous ball retrieval (Met)
 
 ---
 
