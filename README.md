@@ -7,9 +7,11 @@
 
 Scorpion-style hexapod with a 3-DOF arm and computer vision. Wanted to build something that required real-time control, inverse kinematics, and vision processing on embedded hardware. Runs on dual ESP32s (WROOM for motors, S3 for camera) with bare metal C and FreeRTOS.
 
-![Talos Hexapod](https://github.com/user-attachments/assets/0dd7f2fe-0777-488d-a81b-4337134ee4a9)
+![Talos Hexapod](https://github.com/user-attachments/assets/1e9f79bb-ad44-4559-9fed-f055d727c05e)
 
-[![Gait Demo](https://github.com/user-attachments/assets/6a793852-d109-4819-b088-19f9e7e194fe)](https://github.com/user-attachments/assets/25aa7fce-c83b-4c4d-9409-9fcc3f92da20)
+![Talos Demo](https://github.com/user-attachments/assets/300aa188-63e3-4abd-8114-233ddaa06847)
+
+[![Gait Demo]](https://github.com/user-attachments/assets/25aa7fce-c83b-4c4d-9409-9fcc3f92da20)
 
 ## Status
 
