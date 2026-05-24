@@ -30,7 +30,10 @@ void vStateMachineTask(void *pvParams) {
         // processes state transition for arm control and camera task triggering
         robot_state_t cur_state = xStateMachineGetState();
         if (prev_state != STATE_GRAB_PREP && cur_state == STATE_GRAB_PREP) {
-            vTaskSuspend(xGaitTaskHandle);
+            // NOTE: do NOT vTaskSuspend(xGaitTaskHandle) here. The gait task holds
+            // xI2CMutex during xGaitUpdate(). Suspending it mid-hold permanently
+            // deadlocks the arm task (which needs xI2CMutex to run xArmUpdate()).
+            // Gait was already stopped via MOVE_STOP at end of handle_approach.
             xSemaphoreGive(xArmSemaphore);
         }
         prev_state = cur_state;

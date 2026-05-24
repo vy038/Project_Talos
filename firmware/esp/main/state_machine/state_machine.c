@@ -17,9 +17,10 @@ static robot_state_t current_state = STATE_INIT;
 static int64_t state_enter_time = 0;
 static detection_result_t last_detection = {0};
 static bool grab_prep_arm_sent = false;
-static uint16_t s_prev_tof_mm = 0;            // last valid TOF reading during approach, for spike detection
+static bool s_lift_arm_sent = false;          // set once arm_lifted is commanded in STATE_LIFT
+static uint16_t s_prev_tof_mm = 0;           // last valid TOF reading during approach, for spike detection
 
-// IK result saved during GRAB_PREP so it can be printed after the grab completes TODO: REMOVE AFTER TROUBLESHOOTING
+// IK result saved during GRAB_PREP, printed after grab completes for positioning diagnostics
 static struct {
     float base, shoulder, elbow;
     float tof_mm;
@@ -40,24 +41,26 @@ static void transition(robot_state_t new_state) {
     if (new_state != STATE_GRAB_PREP) {
         grab_prep_arm_sent = false;
     }
+    s_lift_arm_sent = false;
     s_prev_tof_mm = 0;
     current_state = new_state;
     state_enter_time = esp_timer_get_time();
 }
 
-// TODO: calibrate these by manually posing the arm and recording angles
+// calibrated on real hardware
 static const arm_angles_t arm_grab_ready = {
     .base     = 90.0f,
-    .shoulder = 55.0f,
-    .elbow    = 65.0f,
-    .gripper  = 170.0f,
+    .shoulder = 60.0f,   // 60 = arm reaches DOWN/FORWARD to ball 
+    .elbow    = 90.0f,
+    .gripper  = 170.0f,  // open — ball enters gripper during descent
 };
 
+// lifted/carry position: shoulder raised to neutral, elbow straight, gripper closed
 static const arm_angles_t arm_lifted = {
     .base     = 90.0f,
-    .shoulder = 120.0f,
+    .shoulder = 90.0f,
     .elbow    = 90.0f,
-    .gripper  = 0.0f,
+    .gripper  = 20.0f, // 20 = closed grip, away from 0° hard stop
 };
 
 static void handle_init(void) {
@@ -90,6 +93,7 @@ static void handle_idle(void) {
 
 static void handle_search(void) {
     vGaitSetType(GAIT_TRIPOD);
+
     // tells robot to turn 360 right slowly while looking for the ball
     vGaitSetCommand(MOVE_TURN_RIGHT, 0.2f);
 
@@ -231,9 +235,12 @@ static void handle_grab_prep(void) {
         return;
     }
 
-    // move arm to proper grab position (after stabilized)
+    // move arm to proper grab position using IK
     if (!grab_prep_arm_sent) {
-        // TOF reports front-surface distance, add ball radius to get the center
+        ik_target_t arm_pos;
+
+        // TOF reports front-surface distance, add ball radius to get the center.
+        // falls back to BALL_STOP_TOF_MM if TOF had no reading at the stop point.
         float dist_mm = ((last_detection.tof_dist_mm > 0)
                         ? (float)last_detection.tof_dist_mm
                         : (float)BALL_STOP_TOF_MM)
@@ -253,18 +260,15 @@ static void handle_grab_prep(void) {
             .z =  dist_mm * sinf(av),
         };
 
-        ik_target_t arm_pos;
         xIKCameraToArm(&cam_pos, &arm_pos);
 
         ik_solution_t sol;
         arm_angles_t grab = arm_grab_ready;
 
         if (xIKSolve(&arm_pos, &sol) == ESP_OK && sol.valid) {
-            // Shoulder clamping detection: if the raw IK angle was negative (target
-            // genuinely below the arm's reach) the solver clamps it near zero.
-            // Values < 10° indicate the IK was computing a negative angle, indicating
-            // the arm geometry doesn't match that target. Use the calibrated scoop pose
-            // instead, but keep IK's base rotation which is always valid.
+            // shoulder clamping detection: if the raw IK angle was negative (target
+            // below arm's reach) solver clamps it near zero
+            // use the calibrated scoop instead, but keep IK's base rotation
             bool shoulder_floored = (sol.shoulder < 10.0f);
 
             grab.base = sol.base_rotation;
@@ -274,11 +278,11 @@ static void handle_grab_prep(void) {
             }
             // grab.shoulder/elbow/gripper stay at arm_grab_ready when floored
 
-            s_last_ik_result.base     = grab.base;
-            s_last_ik_result.shoulder = grab.shoulder;
-            s_last_ik_result.elbow    = grab.elbow;
-            s_last_ik_result.tof_mm   = dist_mm;
-            s_last_ik_result.ik_used  = !shoulder_floored;
+            s_last_ik_result.base      = grab.base;
+            s_last_ik_result.shoulder  = grab.shoulder;
+            s_last_ik_result.elbow     = grab.elbow;
+            s_last_ik_result.tof_mm    = dist_mm;
+            s_last_ik_result.ik_used   = !shoulder_floored;
             s_last_ik_result.populated = true;
         } else {
             // IK unreachable, fall back to calibrated scoop pose with pixel-offset base
@@ -298,13 +302,13 @@ static void handle_grab_prep(void) {
 
         xArmSetAngles(&grab);
         grab_prep_arm_sent = true;
+        return;  // prevent bArmAtTarget() from firing in the same cycle as xArmSetAngles()
     }
 
-    // grab object
+    // wait until arm reaches grab position, then grab
     if (bArmAtTarget()) {
         transition(STATE_GRAB);
     }
-
     if (ms_in_state() > GRAB_PREP_PAUSE_MS + 8000) {
         ESP_LOGE(TAG, "Arm move timeout");
         transition(STATE_IDLE);
@@ -312,13 +316,13 @@ static void handle_grab_prep(void) {
 }
 
 static void handle_grab(void) {
-    // close gripper immediately on entry
+    // close gripper
     if (ms_in_state() < 50) {
-        xArmGripper(0.0f);
+        xArmGripper(20.0f);
         return;
     }
-    // wait until gripper reaches target, transition once closed or after timeout
-    // (ARM_STEP_DEG = 1/20ms = 50 deg/sec, 170 deg travel takes ~3.4s)
+    // wait until all joints (including gripper) reach target, then lift.
+    // gripper: 150° travel at ARM_GRIPPER_STEP_DEG=4°/step/20ms = ~750ms. 1500ms timeout gives margin.
     if (bArmAtTarget()) {
         if (s_last_ik_result.populated) {
             if (s_last_ik_result.ik_used) {
@@ -342,20 +346,26 @@ static void handle_grab(void) {
 }
 
 static void handle_lift(void) {
-    // lifting action for arm once object is grabbed
-    if (ms_in_state() < 100) {
-        ESP_LOGI(TAG, "Lifting object");
-        xArmSetAngles(&arm_lifted);
+    // re-assert gripper on entry to ensure it stays closed.
+    if (ms_in_state() < 50) {
+        xArmGripper(20.0f); // 20° = firm grip, away from 0° hard stop
+    }
+    // hold 250ms for gripper to settle before lifting.
+    if (ms_in_state() < 250) {
         return;
     }
-
-    // transition to done if done 
+    // send lift command
+    if (!s_lift_arm_sent) {
+        xArmSetAngles(&arm_lifted);
+        ESP_LOGI(TAG, "Lifting arm");
+        s_lift_arm_sent = true;
+        return;  // skip bArmAtTarget check this cycle
+    }
+    // done when arm reaches lifted position, or after timeout.
     if (bArmAtTarget()) {
         transition(STATE_DONE);
     }
-
-    // transition to timeout if takes too long
-    if (ms_in_state() > 6000) {
+    if (ms_in_state() > 4500) {
         ESP_LOGW(TAG, "Lift timeout, considering done anyway");
         transition(STATE_DONE);
     }

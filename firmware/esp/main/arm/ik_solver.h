@@ -119,7 +119,7 @@
 
 // Vertical (Z) distance from arm origin to camera — positive = up (mm).
 // Decrease to lower the gripper, increase to raise it (~1mm per mm offset).
-#define CAMERA_OFFSET_VERTICAL_MM   120.0f
+#define CAMERA_OFFSET_VERTICAL_MM   85.0f
 
 /* -------------------------------------------------------------------------- */
 /* Types                                                                       */
