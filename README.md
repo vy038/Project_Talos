@@ -9,7 +9,7 @@ Scorpion-style hexapod with a 3-DOF arm and computer vision. Wanted to build som
 
 ![Talos Hexapod](https://github.com/user-attachments/assets/1e9f79bb-ad44-4559-9fed-f055d727c05e)
 
-![Talos Demo](https://github.com/user-attachments/assets/300aa188-63e3-4abd-8114-233ddaa06847)
+[![Talos Demo](https://github.com/user-attachments/assets/21448996-88a1-48e7-8123-d2e208738eab)](https://github.com/user-attachments/assets/300aa188-63e3-4abd-8114-233ddaa06847)
 
 [![Gait Demo]](https://github.com/user-attachments/assets/25aa7fce-c83b-4c4d-9409-9fcc3f92da20)
 
