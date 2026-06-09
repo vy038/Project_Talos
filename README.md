@@ -7,7 +7,7 @@
 
 Scorpion-style hexapod with a 3-DOF arm and computer vision. Wanted to build something that required real-time control, inverse kinematics, and vision processing on embedded hardware. Runs on dual ESP32s (WROOM for motors, S3 for camera) with bare metal C and FreeRTOS.
 
-![Talos Hexapod](https://github.com/user-attachments/assets/1e9f79bb-ad44-4559-9fed-f055d727c05e)
+![Talos Hexapod](https://github.com/user-attachments/assets/bfcf7d26-ca5e-4e8b-8c70-cd4cb40aa55b)
 
 [![Talos Demo](https://github.com/user-attachments/assets/21448996-88a1-48e7-8123-d2e208738eab)](https://github.com/user-attachments/assets/300aa188-63e3-4abd-8114-233ddaa06847)
 
@@ -21,7 +21,6 @@ Core functionality complete. Sensors and refinements ongoing.
 - ✅ Arm kinematics (IK solver, tested on hardware)
 - ✅ Simulator (real firmware C + HAL stubs, Three.js frontend)
 - ✅ Full RTOS architecture (6 tasks, queues, mutexes, semaphores)
-- ✅ End-to-end autonomous ball retrieval (confirmed on hardware)
 - 🔧 Sensor integration (MPU6050, ACS712, ToF have their firmware ready, but is not yet wired)
 
 ---
@@ -118,9 +117,6 @@ BOOT -> CALIBRATE -> IDLE -> SEARCH -> ALIGN -> APPROACH -> GRAB_PREP -> GRAB ->
                                  |
                             EMERGENCY (any state, power fault)
 ```
-
-
-![State Flowchart](state_flowchart.png)
 
 
 Robot boots up, hardware is initialized in main, and all tasks are launched.
