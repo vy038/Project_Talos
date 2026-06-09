@@ -59,7 +59,7 @@ Three view modes: **Debug** (servo/IMU/I2C dashboard), **2D** (top-down canvas),
 | Power | 3S2P 18650 + BMS, UBEC for servo rail, buck converters for logic |
 
 
-![Wiring diagram](hardware/diagrams/talos_wiring.png)
+![Wiring diagram](diagrams/hardware/talos_wiring.png)
 
 ---
 
@@ -86,7 +86,7 @@ SemaphoreHandle_t xArmSemaphore;       // binary, arm wakes only when state mach
 SemaphoreHandle_t xI2CMutex;           // binary, guards PCA9685 bus
 TaskHandle_t      xUartCamTaskHandle;  // direct notify via cam ping
 ```
-![Task Diagram](https://github.com/user-attachments/assets/d4940cef-9482-428c-83ac-3a2b98442957)
+![Task Diagram](diagrams/task_diagram.jpg)
 
 ---
 
