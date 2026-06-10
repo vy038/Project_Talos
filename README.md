@@ -60,6 +60,7 @@ Three view modes: **Debug** (servo/IMU/I2C dashboard), **2D** (top-down canvas),
 
 
 ![Wiring diagram](diagrams/hardware/talos_wiring.png)
+![Wiring diagram](diagrams/hardware/talos_wiring_planned.png)
 
 ---
 
