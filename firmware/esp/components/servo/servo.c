@@ -112,3 +112,23 @@ esp_err_t xPCA9685SetPwmMulti(i2c_port_t port, uint8_t addr, servo_command_t com
     }
     return ESP_OK;
 }
+
+#define PCA9685_RETRIES 3
+
+esp_err_t xPCA9685SetAngleWithRetry(i2c_port_t port, uint8_t addr, uint8_t channel,
+                                     uint8_t angle, uint16_t pwm_freq_hz) {
+    esp_err_t ret;
+    for (int attempt = 0; attempt < PCA9685_RETRIES; attempt++) {
+        ret = xPCA9685SetAngle(port, addr, channel, angle);
+        if (ret == ESP_OK) return ESP_OK;
+        ESP_LOGW(TAG, "I2C retry %d for 0x%02X ch%d", attempt + 1, addr, channel);
+        if (ret == ESP_ERR_TIMEOUT) {
+            // bus is stuck, recover before retrying
+            xI2cBusRecovery();
+            // board needs reinit after bus recovery
+            xPCA9685Init(port, addr, pwm_freq_hz);
+        }
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
+    return ret;
+}

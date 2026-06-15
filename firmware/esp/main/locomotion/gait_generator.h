@@ -142,17 +142,6 @@ void vGaitSetType(gait_type_t type);
 esp_err_t xApplyAngles(const leg_angles_t *angles);
 
 /**
- * @brief Set servo angle with retry logic
- * 
- * Sets angle for a single servo channel, with retries and I2C bus recovery on failure. Used by xGaitUpdate to apply computed angles to servos.
- * 
- * @param channel servo channel
- * @param angle target angle
- * @return esp_err_t ESP_OK on success, error code on failure
- */
-esp_err_t xBodySetAngleWithRetry(uint8_t channel, uint8_t angle);
-
-/**
  * @brief Call at GAIT_UPDATE_MS intervals. Advances phase, computes angles, writes servos.
  * @param knee_corrections optional per-leg offsets from balance control. NULL to skip.
  * 

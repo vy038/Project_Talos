@@ -97,5 +97,20 @@ esp_err_t xPCA9685SetPwmBurst(i2c_port_t port, uint8_t addr, uint8_t start_chann
 esp_err_t xPCA9685SetPwmMulti(i2c_port_t port, uint8_t addr, servo_command_t commands[],
                                  uint8_t num_commands);
 
+/**
+ * @brief Set servo angle with retry and I2C bus recovery
+ *
+ * Same as xPCA9685SetAngle but retries on failure, recovering the I2C bus
+ * and reinitializing the board if a transaction times out.
+ *
+ * @param port I2C port
+ * @param addr Address of board
+ * @param channel Servo channel (0-15)
+ * @param angle Angle in degrees (0-180)
+ * @param pwm_freq_hz PWM frequency to use if the board needs reinit after bus recovery
+ * @return esp_err_t ESP_OK on success, last error code if all retries fail
+ */
+esp_err_t xPCA9685SetAngleWithRetry(i2c_port_t port, uint8_t addr, uint8_t channel,
+                                     uint8_t angle, uint16_t pwm_freq_hz);
 
 #endif

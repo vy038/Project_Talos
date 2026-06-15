@@ -11,8 +11,6 @@
 #include "servo.h"
 #include "i2c.h"
 #include "esp_log.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 #include <math.h>
 
 static const char *TAG = "ARM";
@@ -25,7 +23,6 @@ static const char *TAG = "ARM";
 #define ARM_STEP_DEG         0.5f    // arm joints (base, shoulder, elbow)
 #define ARM_GRIPPER_STEP_DEG 4.0f   // gripper servo rate is faster: 170 deg in ~0.85s vs regular 13.6s
 #define ANGLE_TOLERANCE      2.0f
-#define I2C_RETRIES          3
 
 static arm_angles_t current_angles = {90.0f, 90.0f, 90.0f, 90.0f};
 static arm_angles_t target_angles  = {90.0f, 90.0f, 90.0f, 90.0f};
@@ -41,25 +38,25 @@ esp_err_t xArmControlInit(void) {
         return ret;
     }
 
-    ret = xArmSetAngleWithRetry(ARM_BASE_CH, 90);
+    ret = xPCA9685SetAngleWithRetry(I2C_MASTER_NUM, PCA9685_ARM_ADDR, ARM_BASE_CH, 90, SERVO_PWM_FREQ_HZ);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize base servo");
         return ret;
     }
 
-    ret = xArmSetAngleWithRetry(ARM_SHOULDER_CH, 90);
+    ret = xPCA9685SetAngleWithRetry(I2C_MASTER_NUM, PCA9685_ARM_ADDR, ARM_SHOULDER_CH, 90, SERVO_PWM_FREQ_HZ);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize shoulder servo");
         return ret;
     }
 
-    ret = xArmSetAngleWithRetry(ARM_ELBOW_CH, 90);
+    ret = xPCA9685SetAngleWithRetry(I2C_MASTER_NUM, PCA9685_ARM_ADDR, ARM_ELBOW_CH, 90, SERVO_PWM_FREQ_HZ);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize elbow servo");
         return ret;
     }
 
-    ret = xArmSetAngleWithRetry(ARM_GRIPPER_CH, 90);
+    ret = xPCA9685SetAngleWithRetry(I2C_MASTER_NUM, PCA9685_ARM_ADDR, ARM_GRIPPER_CH, 90, SERVO_PWM_FREQ_HZ);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to initialize gripper servo");
         return ret;
@@ -78,23 +75,6 @@ esp_err_t xArmSetAngles(const arm_angles_t *angles) {
     current_state = ARM_MOVING;
     return ESP_OK;
 }
-
-esp_err_t xArmSetAngleWithRetry(uint8_t channel, uint8_t angle) {
-    // same as xPCA9685SetAngle but with retry logic and bus recovery on timeout, returns last error if all retries fail
-    esp_err_t ret;
-    for (int attempt = 0; attempt < I2C_RETRIES; attempt++) {
-        ret = xPCA9685SetAngle(I2C_MASTER_NUM, PCA9685_ARM_ADDR, channel, angle);
-        if (ret == ESP_OK) return ESP_OK;
-        ESP_LOGW(TAG, "I2C retry %d for arm ch%d", attempt + 1, channel);
-        if (ret == ESP_ERR_TIMEOUT) {
-            xI2cBusRecovery();
-            xPCA9685Init(I2C_MASTER_NUM, PCA9685_ARM_ADDR, SERVO_PWM_FREQ_HZ);
-        }
-        vTaskDelay(pdMS_TO_TICKS(1));
-    }
-    return ret;
-}
-
 
 // TODO: calibrate arm properly
 esp_err_t xArmUpdate(void) {
@@ -131,16 +111,16 @@ esp_err_t xArmUpdate(void) {
     uint8_t elbow_angle    = (uint8_t)fmaxf(0, fminf(180, current_angles.elbow));
     uint8_t gripper_angle  = (uint8_t)fmaxf(0, fminf(180, current_angles.gripper));
 
-    esp_err_t ret = xArmSetAngleWithRetry(ARM_BASE_CH, base_angle);
+    esp_err_t ret = xPCA9685SetAngleWithRetry(I2C_MASTER_NUM, PCA9685_ARM_ADDR, ARM_BASE_CH, base_angle, SERVO_PWM_FREQ_HZ);
     if (ret != ESP_OK) { current_state = ARM_ERROR; return ret; }
 
-    ret = xArmSetAngleWithRetry(ARM_SHOULDER_CH, shoulder_angle);
+    ret = xPCA9685SetAngleWithRetry(I2C_MASTER_NUM, PCA9685_ARM_ADDR, ARM_SHOULDER_CH, shoulder_angle, SERVO_PWM_FREQ_HZ);
     if (ret != ESP_OK) { current_state = ARM_ERROR; return ret; }
 
-    ret = xArmSetAngleWithRetry(ARM_ELBOW_CH, elbow_angle);
+    ret = xPCA9685SetAngleWithRetry(I2C_MASTER_NUM, PCA9685_ARM_ADDR, ARM_ELBOW_CH, elbow_angle, SERVO_PWM_FREQ_HZ);
     if (ret != ESP_OK) { current_state = ARM_ERROR; return ret; }
 
-    ret = xArmSetAngleWithRetry(ARM_GRIPPER_CH, gripper_angle);
+    ret = xPCA9685SetAngleWithRetry(I2C_MASTER_NUM, PCA9685_ARM_ADDR, ARM_GRIPPER_CH, gripper_angle, SERVO_PWM_FREQ_HZ);
     if (ret != ESP_OK) { current_state = ARM_ERROR; return ret; }
 
     // change state once target is reached

@@ -139,39 +139,22 @@ static void compute_leg(float leg_phase, float duty, float stride,
     }
 }
 
-#define I2C_RETRIES 3
-
-esp_err_t xBodySetAngleWithRetry(uint8_t channel, uint8_t angle) {
-    esp_err_t ret;
-    for (int attempt = 0; attempt < I2C_RETRIES; attempt++) {
-        ret = xPCA9685SetAngle(I2C_MASTER_NUM, PCA9685_BODY_ADDR, channel, angle);
-        if (ret == ESP_OK) return ESP_OK;
-        ESP_LOGW(TAG, "I2C retry %d for ch%d", attempt + 1, channel);
-        if (ret == ESP_ERR_TIMEOUT) {
-            // bus is stuck, recover before retrying
-            xI2cBusRecovery();
-            // PCA9685 needs reinit after bus recovery
-            xPCA9685Init(I2C_MASTER_NUM, PCA9685_BODY_ADDR, SERVO_PWM_FREQ_HZ);
-        }
-        vTaskDelay(pdMS_TO_TICKS(1));
-    }
-    return ret;
-}
-
 esp_err_t xApplyAngles(const leg_angles_t *angles) {
     for (int i = 0; i < NUM_LEGS; i++) {
         uint8_t hip_angle  = (uint8_t)fmaxf(0, fminf(180, angles->hip_angle[i]));
         uint8_t knee_angle = (uint8_t)fmaxf(0, fminf(180, angles->knee_angle[i]));
 
-        esp_err_t ret = xBodySetAngleWithRetry(leg_channels[i][0], hip_angle);
+        esp_err_t ret = xPCA9685SetAngleWithRetry(I2C_MASTER_NUM, PCA9685_BODY_ADDR,
+                                                   leg_channels[i][0], hip_angle, SERVO_PWM_FREQ_HZ);
         if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to set leg %d hip after %d retries", i, I2C_RETRIES);
+            ESP_LOGE(TAG, "Failed to set leg %d hip after retries", i);
             return ret;
         }
 
-        ret = xBodySetAngleWithRetry(leg_channels[i][1], knee_angle);
+        ret = xPCA9685SetAngleWithRetry(I2C_MASTER_NUM, PCA9685_BODY_ADDR,
+                                         leg_channels[i][1], knee_angle, SERVO_PWM_FREQ_HZ);
         if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to set leg %d knee after %d retries", i, I2C_RETRIES);
+            ESP_LOGE(TAG, "Failed to set leg %d knee after retries", i);
             return ret;
         }
     }

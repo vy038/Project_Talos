@@ -80,3 +80,10 @@ esp_err_t xPCA9685SetPwmMulti(i2c_port_t port, uint8_t addr, servo_command_t com
     }
     return ESP_OK;
 }
+
+esp_err_t xPCA9685SetAngleWithRetry(i2c_port_t port, uint8_t addr, uint8_t channel,
+                                     uint8_t angle, uint16_t pwm_freq_hz) {
+    /* sim has no I2C bus to fail, so no retry needed */
+    (void)pwm_freq_hz;
+    return xPCA9685SetAngle(port, addr, channel, angle);
+}
