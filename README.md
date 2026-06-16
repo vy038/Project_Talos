@@ -28,7 +28,8 @@ Scorpion-style hexapod with a 3-DOF arm and computer vision. Built to tackle rea
 
 ## Simulator
 
-<img width="1916" height="996" alt="Simulator screenshot" src="https://github.com/user-attachments/assets/13be677a-26a8-42ef-a836-937a87fef0af" />
+<img width="1920" height="1051" alt="Simulator screenshot" src="https://github.com/user-attachments/assets/7cc72fdd-d190-4bce-9270-c814d66ea8df" />
+
 
 **[Try it live →](https://huggingface.co/spaces/vy739/talos-lightsim)**
 
