@@ -54,11 +54,17 @@ static void *task_wrapper(void *arg) {
     return NULL;
 }
 
+/* Registry of tasks by name, so sim-only code (main_sim.c) can suspend a
+ * task without the firmware needing to hand out a TaskHandle_t. */
+#define SIM_TASK_REGISTRY_MAX 16
+static struct { char name[32]; sim_task_t *task; } sim_task_registry[SIM_TASK_REGISTRY_MAX];
+static int sim_task_registry_count = 0;
+
 BaseType_t xTaskCreatePinnedToCore(TaskFunction_t func, const char *name,
     uint32_t stack, void *params, UBaseType_t prio,
     TaskHandle_t *handle_out, BaseType_t core)
 {
-    (void)name; (void)stack; (void)prio; (void)core;
+    (void)stack; (void)prio; (void)core;
 
     sim_task_t *t = (sim_task_t *)calloc(1, sizeof(sim_task_t));
     pthread_mutex_init(&t->notify_mutex,  NULL);
@@ -72,8 +78,27 @@ BaseType_t xTaskCreatePinnedToCore(TaskFunction_t func, const char *name,
     w->task   = t;
 
     if (handle_out) *handle_out = t;
+
+    if (name && sim_task_registry_count < SIM_TASK_REGISTRY_MAX) {
+        strncpy(sim_task_registry[sim_task_registry_count].name, name,
+                sizeof(sim_task_registry[0].name) - 1);
+        sim_task_registry[sim_task_registry_count].task = t;
+        sim_task_registry_count++;
+    }
+
     pthread_create(&t->thread, NULL, task_wrapper, w);
     return pdPASS;
+}
+
+/* Permanently suspend a task by the name it was created with (sim-only,
+ * used to stop the autonomous state-machine task once teleop takes over). */
+void sim_suspend_task_by_name(const char *name) {
+    for (int i = 0; i < sim_task_registry_count; i++) {
+        if (strcmp(sim_task_registry[i].name, name) == 0) {
+            vTaskSuspend(sim_task_registry[i].task);
+            return;
+        }
+    }
 }
 
 void sim_check_suspend(void) {

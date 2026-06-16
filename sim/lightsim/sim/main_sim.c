@@ -12,7 +12,11 @@
  * Injection server: TCP port 9998 (loopback only)
  *   Accepts one client at a time. Protocol is identical to the old stdin:
  *     - 0xAA ... (13 bytes): binary UART detection packet → sim_uart_inject
- *     - { ... }\n          : JSON tof update → sim_set_tof_distance_mm
+ *     - { ... }\n          : JSON line, fields are checked independently:
+ *         "mm"        → sim_set_tof_distance_mm (ToF override)
+ *         "command"   → D-pad/keyboard move command: kills the autonomous
+ *                        state-machine task and drives the gait generator directly
+ *         "timescale" → sim_set_time_scale (backend FreeRTOS task speed)
  */
 
 #include <stdio.h>
@@ -26,6 +30,7 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include "sim_state.h"
+#include "gait_generator.h"
 
 #define INJECTION_PORT_DEFAULT 9998
 
@@ -38,6 +43,19 @@ extern void sim_uart_inject(const uint8_t *data, size_t len);
 
 /* sim_set_tof_distance_mm is defined in sim_state.c */
 extern void sim_set_tof_distance_mm(uint16_t mm);
+
+/* sim_suspend_task_by_name is defined in freertos_sim.c */
+extern void sim_suspend_task_by_name(const char *name);
+
+/* Map frontend "command" strings (sendRobotCommand's data-cmd) to gait commands */
+static bool move_command_from_str(const char *s, move_command_t *out) {
+    if (!strncmp(s, "forward", 7))    { *out = MOVE_FORWARD;   return true; }
+    if (!strncmp(s, "backward", 8))   { *out = MOVE_BACKWARD;  return true; }
+    if (!strncmp(s, "turn_left", 9))  { *out = MOVE_TURN_LEFT; return true; }
+    if (!strncmp(s, "turn_right", 10)){ *out = MOVE_TURN_RIGHT; return true; }
+    if (!strncmp(s, "stop", 4))       { *out = MOVE_STOP;      return true; }
+    return false;
+}
 
 /* Parse and dispatch a buffer of bytes received from the injection client */
 static void process_injection_buf(uint8_t *buf, size_t *buf_len) {
@@ -54,12 +72,44 @@ static void process_injection_buf(uint8_t *buf, size_t *buf_len) {
             while (j < *buf_len && buf[j] != '\n') j++;
             if (j >= *buf_len) break; /* incomplete, wait */
             buf[j] = '\0';
-            char *mm_ptr = strstr((char *)(buf + i), "\"mm\":");
+            char *line = (char *)(buf + i);
+
+            char *mm_ptr = strstr(line, "\"mm\":");
             if (mm_ptr) {
                 int mm_val = atoi(mm_ptr + 5);
                 if (mm_val > 0 && mm_val <= 8190)
                     sim_set_tof_distance_mm((uint16_t)mm_val);
             }
+
+            /* {"type":"move","command":"forward","speed":0.5,"gait":0} — D-pad/keyboard
+             * commands. Any movement command hands gait control to teleop and stops
+             * the autonomous program so it doesn't fight with manual driving. */
+            char *cmd_ptr = strstr(line, "\"command\":\"");
+            if (cmd_ptr) {
+                cmd_ptr += strlen("\"command\":\"");
+                move_command_t move;
+                if (move_command_from_str(cmd_ptr, &move)) {
+                    /* kill the autonomous program so it stops issuing its own
+                     * gait commands and fighting with teleop */
+                    sim_suspend_task_by_name("state_mach");
+
+                    char *gait_ptr = strstr(line, "\"gait\":");
+                    if (gait_ptr) vGaitSetType((gait_type_t)atoi(gait_ptr + 7));
+
+                    float speed = 0.5f;
+                    char *speed_ptr = strstr(line, "\"speed\":");
+                    if (speed_ptr) speed = (float)atof(speed_ptr + 8);
+
+                    vGaitSetCommand(move, speed);
+                }
+            }
+
+            /* {"timescale":1.5} — scales backend FreeRTOS task timing */
+            char *ts_ptr = strstr(line, "\"timescale\":");
+            if (ts_ptr) {
+                sim_set_time_scale((float)atof(ts_ptr + strlen("\"timescale\":")));
+            }
+
             i = j + 1;
         } else {
             i++;

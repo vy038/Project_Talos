@@ -157,9 +157,13 @@ static inline TickType_t xTaskGetTickCount(void) {
     return (TickType_t)((uint64_t)ts.tv_sec * 1000ULL + (uint64_t)ts.tv_nsec / 1000000ULL);
 }
 
+/* lets TIME SCALE speed up/slow down the backend firmware tasks themselves,
+ * not just the frontend visualization */
+extern float sim_get_time_scale(void);
+
 static inline void vTaskDelay(TickType_t ticks) {
     sim_check_suspend();
-    usleep((useconds_t)ticks * 1000U);
+    usleep((useconds_t)(ticks * 1000U / sim_get_time_scale()));
     sim_on_tick((uint32_t)ticks);
 }
 
@@ -169,7 +173,7 @@ static inline void vTaskDelayUntil(TickType_t *pxPreviousWakeTime, TickType_t xT
     TickType_t now    = xTaskGetTickCount();
     if ((int32_t)(target - now) > 0) {
         uint32_t sleep_ms = target - now;
-        usleep((useconds_t)sleep_ms * 1000U);
+        usleep((useconds_t)(sleep_ms * 1000U / sim_get_time_scale()));
         sim_on_tick(sleep_ms);
     } else {
         sim_on_tick(0);

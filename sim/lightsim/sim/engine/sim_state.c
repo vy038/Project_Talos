@@ -29,6 +29,17 @@ bool sim_json_enabled(void) {
     return json_output_enabled;
 }
 
+static volatile float time_scale = 1.0f;
+
+void sim_set_time_scale(float scale) {
+    if (scale < 0.01f) scale = 0.01f;
+    time_scale = scale;
+}
+
+float sim_get_time_scale(void) {
+    return time_scale;
+}
+
 static volatile bool exit_requested = false;
 
 void sim_request_exit(void) {

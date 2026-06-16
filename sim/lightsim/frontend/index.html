@@ -194,10 +194,10 @@
                         <div class="ctrl-section">
                             <div class="ctrl-title collapsible collapsed" data-target="sec-timescale">TIME SCALE</div>
                             <div class="ctrl-section-body collapsed" id="sec-timescale">
-                                <div class="slider-row">
+                                <div class="slider-row" style="margin: 10px 0 6px;">
                                     <label>Scale</label>
-                                    <input type="range" min="10" max="300" value="100" id="timescale-slider"
-                                        oninput="window.TimeScale=this.value/100; document.getElementById('timescale-val').textContent=window.TimeScale.toFixed(1)+'x'; document.getElementById('timescale-label').textContent=window.TimeScale.toFixed(1)+'x';">
+                                    <input type="range" min="0" max="200" value="100" id="timescale-slider"
+                                        oninput="window.TimeScale=this.value/100; document.getElementById('timescale-val').textContent=window.TimeScale.toFixed(1)+'x'; document.getElementById('timescale-label').textContent=window.TimeScale.toFixed(1)+'x'; sendTimeScale(window.TimeScale);">
                                     <span id="timescale-val" class="slider-val">1.0x</span>
                                 </div>
                             </div>
@@ -212,12 +212,6 @@
                                     <button class="dpad-btn" data-cmd="stop" title="Stop">STP</button>
                                     <button class="dpad-btn" data-cmd="turn_right" title="Turn Right">R</button>
                                     <button class="dpad-btn" data-cmd="backward" title="Backward">REV</button>
-                                </div>
-                                <div class="slider-row">
-                                    <label>Speed</label>
-                                    <input type="range" min="10" max="100" value="50" id="speed-slider"
-                                        oninput="document.getElementById('speed-val').textContent=this.value+'%'">
-                                    <span id="speed-val" class="slider-val">50%</span>
                                 </div>
                                 <div class="slider-row">
                                     <label>Gait</label>
@@ -412,13 +406,21 @@
             document.getElementById('arm-shoulder-val').textContent = '90';
             document.getElementById('arm-elbow-val').textContent = '90';
             document.getElementById('arm-gripper-val').textContent = '0';
-            document.getElementById('speed-slider').value = 50;
-            document.getElementById('speed-val').textContent = '50%';
             if (window.resetRobotPosition) window.resetRobotPosition();
             
             // Kill simulator (go offline)
             fetch(`/api/kill?sid=${window._simSid || ''}`, { method: 'POST' }).catch(() => {});
         });
+
+        // Forward TIME SCALE to the backend C simulator so it speeds up/slows
+        // down the actual running program, not just the frontend visuals.
+        function sendTimeScale(scale) {
+            fetch(`/api/command?sid=${window._simSid || ''}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ timescale: scale })
+            }).catch(() => {});
+        }
 
         // ── D-pad & keyboard movement ────────────────────────────────────────
         function sendRobotCommand(cmd) {
@@ -443,7 +445,7 @@
                 sendRobotCommand({
                     type: 'move',
                     command: btn.dataset.cmd,
-                    speed: document.getElementById('speed-slider').value / 100,
+                    speed: 0.5,
                     gait: +document.getElementById('gait-select').value
                 });
             });
@@ -456,10 +458,14 @@
                 sendRobotCommand({
                     type: 'move',
                     command: keymap[e.key],
-                    speed: document.getElementById('speed-slider').value / 100,
+                    speed: 0.5,
                     gait: +document.getElementById('gait-select').value
                 });
             }
+        });
+
+        document.getElementById('gait-select').addEventListener('change', function() {
+            if (window.GaitControl) window.GaitControl.gait = +this.value;
         });
 
         // ── Test runner (client-side gait demo) ──────────────────────────────

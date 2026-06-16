@@ -68,6 +68,10 @@ void sim_on_tick(uint32_t delay_ms);
 void sim_request_exit(void);
 bool sim_exit_requested(void);
 
+/** Backend simulation speed multiplier (scales vTaskDelay's real-time sleep) */
+void sim_set_time_scale(float scale);
+float sim_get_time_scale(void);
+
 #ifdef __cplusplus
 }
 #endif
