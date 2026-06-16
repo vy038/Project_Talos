@@ -57,8 +57,8 @@
             </div>
             <div class="topbar-divider"></div>
             <div class="topbar-right">
-                <span id="state-badge" class="state-badge state-idle" style="margin-right:14px; font-size:13px; font-weight:700; letter-spacing:0.08em; border:none; padding:0;">N/A</span>
-                <button id="btn-restart-tutorial" class="btn btn-secondary" style="margin-right: 12px; font-size: 8px;">Restart Tutorial</button>
+                <span id="state-badge" class="state-badge state-idle" style="margin-right: 14px;">N/A</span>
+                <button id="btn-restart-tutorial" class="btn btn-secondary" style="margin-right: 12px;">Restart Tutorial</button>
                 <div class="status-group">
                     <span class="status-dot" id="ws-dot"></span>
                     <span id="ws-status" class="disconnected">OFFLINE</span>
@@ -678,6 +678,18 @@
                     + `G:${window.ArmControl.currentGripper.toFixed(0)}`;
             }
         }, 100);
+
+        // ── Slider fill: sync --pct custom property so green fill tracks thumb ──
+        function syncSliderFill(el) {
+            const min = parseFloat(el.min) || 0;
+            const max = parseFloat(el.max) || 100;
+            const pct = ((parseFloat(el.value) - min) / (max - min) * 100).toFixed(2) + '%';
+            el.style.setProperty('--pct', pct);
+        }
+        document.querySelectorAll('input[type="range"]').forEach(el => {
+            syncSliderFill(el);
+            el.addEventListener('input', () => syncSliderFill(el));
+        });
     </script>
 </body>
 </html>

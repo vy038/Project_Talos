@@ -17,11 +17,11 @@ Shows: centroid, blob size, distance estimate, UART packet bytes
 <title>Red Ball Detection — Project Talos</title>
 <style>
   :root {
-    --bg-0: #0b0e14; --bg-1: #0f1219; --bg-2: #151a24; --bg-3: #1a2030;
-    --border: #1e2738; --border-focus: #2a3a52;
-    --text-primary: #c8cdd5; --text-dim: #5a6578; --text-muted: #3d4654;
-    --accent: #3b82f6; --danger: #ef4444; --success: #22c55e;
-    --warning: #f59e0b; --cyan: #06b6d4;
+    --bg-0: #0a0a0a; --bg-1: #141414; --bg-2: #1c1c1c; --bg-3: #242424;
+    --border: #2e2e2e; --border-focus: #606060;
+    --text-primary: #e8e8e8; --text-dim: #a0a0a0; --text-muted: #606060;
+    --accent: #4ade80; --danger: #f87171; --success: #4ade80;
+    --warning: #fbbf24; --teal: #5cc8b0;
     --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -66,7 +66,7 @@ Shows: centroid, blob size, distance estimate, UART packet bytes
 
   .stat-row { display: flex; justify-content: space-between; padding: 1px 0; }
   .stat-label { color: var(--text-muted); }
-  .stat-val { color: var(--cyan); font-weight: 600; }
+  .stat-val { color: var(--text-primary); font-weight: 600; }
   .stat-val.detected   { color: var(--success); }
   .stat-val.undetected { color: var(--danger); }
 
@@ -78,10 +78,11 @@ Shows: centroid, blob size, distance estimate, UART packet bytes
     text-align: center; cursor: default; font-family: var(--font-mono);
   }
   .byte.start    { border-color: var(--text-muted); color: var(--text-dim); }
-  .byte.type     { border-color: #6366f1; color: #a5b4fc; }
+  .byte.type     { border-color: #a78bfa; color: #c4b5fd; }
   .byte.det      { border-color: var(--success); color: var(--success); }
   .byte.det.off  { border-color: var(--danger);  color: var(--danger); }
-  .byte.coord    { border-color: var(--cyan);    color: var(--cyan); }
+  .byte.coord    { border-color: var(--teal);    color: var(--teal); }
+  .byte.tof      { border-color: #e0a050;        color: #e0a050; }
   .byte.radius   { border-color: var(--warning); color: var(--warning); }
   .byte.chk      { border-color: var(--text-muted); color: var(--text-dim); }
   .byte-label    { font-size: 8px; color: var(--text-muted); text-align: center; }
@@ -138,20 +139,22 @@ Shows: centroid, blob size, distance estimate, UART packet bytes
     </div>
 
     <div class="panel">
-      <h2>UART Packet (11 bytes)</h2>
+      <h2>UART Packet (13 bytes)</h2>
       <div class="pkt-bytes" id="pkt-bytes">—</div>
       <div class="pkt-legend">
-        <span><span style="color:#5a6578">██</span> start</span>
-        <span><span style="color:#a5b4fc">██</span> type</span>
-        <span><span style="color:#22c55e">██</span> det</span>
-        <span><span style="color:#06b6d4">██</span> x/y</span>
-        <span><span style="color:#f59e0b">██</span> radius</span>
-        <span><span style="color:#5a6578">██</span> chk</span>
+        <span><span style="color:#606060">██</span> start</span>
+        <span><span style="color:#a78bfa">██</span> type</span>
+        <span><span style="color:#4ade80">██</span> det</span>
+        <span><span style="color:#5cc8b0">██</span> x/y</span>
+        <span><span style="color:#fbbf24">██</span> radius</span>
+        <span><span style="color:#e0a050">██</span> tof</span>
+        <span><span style="color:#606060">██</span> chk</span>
       </div>
       <div style="margin-top:6px;">
         <div class="stat-row"><span class="stat-label">Decoded X</span>     <span class="stat-val" id="pd-x">—</span></div>
         <div class="stat-row"><span class="stat-label">Decoded Y</span>     <span class="stat-val" id="pd-y">—</span></div>
         <div class="stat-row"><span class="stat-label">Decoded R</span>     <span class="stat-val" id="pd-r">—</span></div>
+        <div class="stat-row"><span class="stat-label">ToF (mm)</span>      <span class="stat-val" id="pd-tof">—</span></div>
         <div class="stat-row"><span class="stat-label">Checksum</span>      <span class="stat-val" id="pd-chk">—</span></div>
       </div>
     </div>
@@ -177,11 +180,11 @@ function drawCanvas(data) {
   ctx.clearRect(0, 0, CAM_W, CAM_H);
 
   // background
-  ctx.fillStyle = "#0b0e14";
+  ctx.fillStyle = "#080808";
   ctx.fillRect(0, 0, CAM_W, CAM_H);
 
   // crosshair
-  ctx.strokeStyle = "#1e2738";
+  ctx.strokeStyle = "#282828";
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(CAM_W / 2, 0); ctx.lineTo(CAM_W / 2, CAM_H);
@@ -194,24 +197,24 @@ function drawCanvas(data) {
   const r  = Math.max(4, data.px_r);
 
   // blob circle
-  ctx.strokeStyle = "#ef4444";
+  ctx.strokeStyle = "#c04040";
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, 2 * Math.PI);
   ctx.stroke();
 
   // fill with transparent red
-  ctx.fillStyle = "rgba(239,68,68,0.12)";
+  ctx.fillStyle = "rgba(192,64,64,0.12)";
   ctx.fill();
 
   // centroid dot
-  ctx.fillStyle = "#ef4444";
+  ctx.fillStyle = "#c04040";
   ctx.beginPath();
   ctx.arc(cx, cy, 3, 0, 2 * Math.PI);
   ctx.fill();
 
   // offset line from center to centroid
-  ctx.strokeStyle = "rgba(239,68,68,0.35)";
+  ctx.strokeStyle = "rgba(192,64,64,0.35)";
   ctx.lineWidth = 1;
   ctx.setLineDash([4, 4]);
   ctx.beginPath();
@@ -241,12 +244,13 @@ function updateStats(d) {
 
   // packet bytes
   const pktEl = document.getElementById("pkt-bytes");
-  if (d.pkt && d.pkt.length === 22) {
+  if (d.pkt && d.pkt.length === 26) {
     const bytes = [];
-    for (let i = 0; i < 11; i++) bytes.push(parseInt(d.pkt.slice(i*2, i*2+2), 16));
+    for (let i = 0; i < 13; i++) bytes.push(parseInt(d.pkt.slice(i*2, i*2+2), 16));
 
-    const labels = ["start","start","type", detected?"det":"det off","x_hi","x_lo","y_hi","y_lo","r_hi","r_lo","chk"];
-    const classes = ["start","start","type", detected?"det":"det off","coord","coord","coord","coord","radius","radius","chk"];
+    const detClass = detected ? "det" : "det off";
+    const labels  = ["start","start","type",detClass,"x_hi","x_lo","y_hi","y_lo","r_hi","r_lo","tof_hi","tof_lo","chk"];
+    const classes = ["start","start","type",detClass, "coord","coord","coord","coord","radius","radius","tof","tof","chk"];
 
     pktEl.innerHTML = bytes.map((b, i) =>
       `<div><div class="byte ${classes[i]}" title="${labels[i]}">0x${b.toString(16).toUpperCase().padStart(2,'0')}</div>
@@ -261,6 +265,7 @@ function updateStats(d) {
     document.getElementById("pd-x").textContent   = pd.x;
     document.getElementById("pd-y").textContent   = pd.y;
     document.getElementById("pd-r").textContent   = pd.r;
+    document.getElementById("pd-tof").textContent = pd.tof_mm !== undefined ? pd.tof_mm + ' mm' : '—';
     document.getElementById("pd-chk").textContent = pd.checksum;
   }
 }

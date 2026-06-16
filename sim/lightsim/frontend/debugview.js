@@ -90,11 +90,11 @@
         bar.style.width = pct + '%';
         valueEl.textContent = angle.toFixed(0);
 
-        // Color: blue near neutral, warm at extremes
+        // neutral gray at center, accent green at extremes
         const dist = Math.abs(angle - 90) / 90;
-        const r = Math.round(59 * (1 - dist) + 239 * dist);
-        const g = Math.round(130 * (1 - dist) + 68 * dist);
-        const b = Math.round(246 * (1 - dist) + 68 * dist);
+        const r = Math.round(56 * (1 - dist) + 57 * dist);
+        const g = Math.round(56 * (1 - dist) + 211 * dist);
+        const b = Math.round(56 * (1 - dist) + 83 * dist);
         bar.style.background = `rgb(${r},${g},${b})`;
     }
 
@@ -173,15 +173,15 @@
         line.className = 'serial-line';
 
         if (msg.includes('[E]') || msg.includes('ERROR')) {
-            line.style.color = '#ef4444';
+            line.style.color = '#f87171';
         } else if (msg.includes('[W]') || msg.includes('WARN')) {
-            line.style.color = '#f59e0b';
+            line.style.color = '#fbbf24';
         } else if (msg.includes('[I]') || msg.includes('INFO')) {
-            line.style.color = '#22c55e';
+            line.style.color = '#4ade80';
         } else if (msg.includes('[D]') || msg.includes('DEBUG')) {
-            line.style.color = '#5a6578';
+            line.style.color = '#555555';
         } else {
-            line.style.color = '#c8cdd5';
+            line.style.color = '#eeeeee';
         }
 
         line.textContent = msg;

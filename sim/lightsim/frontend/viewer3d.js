@@ -1476,46 +1476,29 @@ window.resetRobotPosition = function() {
 function animate() {
     requestAnimationFrame(animate);
 
-    const pane = document.getElementById('pane-view3d');
-    if (pane && pane.classList.contains('active')) {
-        updateRobot(latestState);
-        updatePhysics();
-        controls.update();
-        renderer.render(scene, camera);
+    // Always update physics + robot state so SmoothedState stays current for
+    // the 2D view and debug panel even when the 3D pane is hidden.
+    updateRobot(latestState);
+    updatePhysics();
 
-        // Export ball position for UI readout
-        window.BallPosition = {
-            x: ballBody.position.x,
-            y: ballBody.position.y,
-            z: ballBody.position.z,
-        };
+    window.BallPosition = {
+        x: ballBody.position.x,
+        y: ballBody.position.y,
+        z: ballBody.position.z,
+    };
 
-        // Simulated camera detection (~20 FPS = every 3 frames at 60fps)
-        // States 0-6 need camera (INIT through GRAB_PREP); 7+ (GRAB/LIFT/DONE) don't
-        const camNeeded = !latestState || (latestState.robot_state !== undefined ? latestState.robot_state <= 6 : true);
-
-        camTickCounter++;
-        if (camTickCounter >= 3 && window.PhysicsBall.active && camNeeded) {
-            camTickCounter = 0;
-            const det = simulateCameraDetection(ballBody.position);
-            if (det) {
-                window.SimWS.send(det);
-                window.LatestCamDetection = det;
-                // Forward ToF reading to C sim so sim_set_tof_distance_mm is updated
-                window.SimWS.send({ type: 'tof_update', tof_mm: det.dist_tof_mm });
-            } else {
-                // Ball out of FOV — reset beam to max range
-                const beamPos = tofBeamGeom.attributes.position;
-                beamPos.setXYZ(1, 0, 0, 2000 / SIM_MM_PER_PX);
-                beamPos.needsUpdate = true;
-                const noDet = sendNoDetection();
-                window.SimWS.send(noDet);
-                window.LatestCamDetection = noDet;
-                window.SimWS.send({ type: 'tof_update', tof_mm: 2000 });
-            }
-        } else if (!window.PhysicsBall.active && camNeeded && camTickCounter >= 3) {
-            // Ball inactive but camera still needed — send no-detection to firmware
-            camTickCounter = 0;
+    // Camera detection runs regardless of which viewport is visible so the
+    // CAM panel and firmware injection keep working when 3D is toggled off.
+    const camNeeded = !latestState || (latestState.robot_state !== undefined ? latestState.robot_state <= 6 : true);
+    camTickCounter++;
+    if (camTickCounter >= 3 && window.PhysicsBall.active && camNeeded) {
+        camTickCounter = 0;
+        const det = simulateCameraDetection(ballBody.position);
+        if (det) {
+            window.SimWS.send(det);
+            window.LatestCamDetection = det;
+            window.SimWS.send({ type: 'tof_update', tof_mm: det.dist_tof_mm });
+        } else {
             const beamPos = tofBeamGeom.attributes.position;
             beamPos.setXYZ(1, 0, 0, 2000 / SIM_MM_PER_PX);
             beamPos.needsUpdate = true;
@@ -1523,13 +1506,28 @@ function animate() {
             window.SimWS.send(noDet);
             window.LatestCamDetection = noDet;
             window.SimWS.send({ type: 'tof_update', tof_mm: 2000 });
-        } else if (!camNeeded && camTickCounter >= 3) {
-            // Camera not needed (state 7+) — just reset beam visually, no UART packets
-            camTickCounter = 0;
-            const beamPos = tofBeamGeom.attributes.position;
-            beamPos.setXYZ(1, 0, 0, 2000 / SIM_MM_PER_PX);
-            beamPos.needsUpdate = true;
         }
+    } else if (!window.PhysicsBall.active && camNeeded && camTickCounter >= 3) {
+        camTickCounter = 0;
+        const beamPos = tofBeamGeom.attributes.position;
+        beamPos.setXYZ(1, 0, 0, 2000 / SIM_MM_PER_PX);
+        beamPos.needsUpdate = true;
+        const noDet = sendNoDetection();
+        window.SimWS.send(noDet);
+        window.LatestCamDetection = noDet;
+        window.SimWS.send({ type: 'tof_update', tof_mm: 2000 });
+    } else if (!camNeeded && camTickCounter >= 3) {
+        camTickCounter = 0;
+        const beamPos = tofBeamGeom.attributes.position;
+        beamPos.setXYZ(1, 0, 0, 2000 / SIM_MM_PER_PX);
+        beamPos.needsUpdate = true;
+    }
+
+    // Three.js render only when the 3D pane is visible.
+    const pane = document.getElementById('pane-view3d');
+    if (pane && pane.classList.contains('active')) {
+        controls.update();
+        renderer.render(scene, camera);
     }
 }
 animate();
