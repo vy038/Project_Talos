@@ -21,7 +21,8 @@ Scorpion-style hexapod with a 3-DOF arm and computer vision. Built to tackle rea
 | Arm IK solver | ✅ Done |
 | HIL simulator (real firmware + Three.js) | ✅ Done |
 | RTOS architecture (6 tasks, queues, mutexes) | ✅ Done |
-| Sensor integration (MPU6050, ACS712, ToF) | 🔧 Firmware ready, not yet wired |
+| Live Working Demo | ✅ Done |
+| Extra Sensor integration (MPU6050, ACS712) | 🔧 Firmware ready, not yet wired |
 
 ---
 
