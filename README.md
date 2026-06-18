@@ -85,7 +85,7 @@ Tasks were assigned based on what needs to run concurrently. Priorities reflect 
 
 ```c
 QueueHandle_t     xFrameQueue;         // depth=1, stale frames are worse than no frames
-QueueHandle_t     xPowerQueue;         // depth=4
+QueueHandle_t     xPowerQueue;         // depth=3
 SemaphoreHandle_t xArmSemaphore;       // binary, arm wakes only when state machine signals
 SemaphoreHandle_t xI2CMutex;           // binary, guards PCA9685 bus
 TaskHandle_t      xUartCamTaskHandle;  // direct notify via cam ping
