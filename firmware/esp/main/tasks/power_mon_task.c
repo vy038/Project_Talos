@@ -12,9 +12,8 @@ void vPowerMonTask(void *pvParams) {
         // grab power status, check state,a nd send to state machine if necessary
         power_status_t status = xPowerCheck();
         // only sends for warning and emergencies
-        if (status == POWER_EMERGENCY) { // if emergency, set priority to max to send to state machine asap
+        if (status == POWER_EMERGENCY) {
             xQueueSend(xPowerQueue, &status, 0);
-            vTaskPrioritySet(NULL, configMAX_PRIORITIES - 1);
         } else if (status == POWER_WARNING) {
             xQueueSend(xPowerQueue, &status, 0);
         }
